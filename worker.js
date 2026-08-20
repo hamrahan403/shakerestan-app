@@ -79,9 +79,11 @@ async function handleRequestCode(request, env) {
 }
 
 // مرحله‌ی ۲: بررسی کد؛ در صورت درست بودن، یک «بلیط» کوتاه‌عمر برمی‌گرداند
-async function handleVerifyCode(request, env) {
+async function handleRequestCode(request, env) {
     try {
-        const { email, code } = await request.json();
+        console.log('DEBUG env keys:', Object.keys(env));
+        console.log('DEBUG FIREBASE_CLIENT_EMAIL type:', typeof env.FIREBASE_CLIENT_EMAIL, JSON.stringify(env.FIREBASE_CLIENT_EMAIL));
+        const { email } = await request.json();
         const emailLower = (email || '').trim().toLowerCase();
         const docId = firestoreDocIdFromEmail(emailLower);
         const stored = await firestoreGet(env, `authCodes/${docId}`);

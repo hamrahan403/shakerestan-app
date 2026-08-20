@@ -42,7 +42,7 @@ function firestoreDocIdFromEmail(email) {
 async function handleRequestCode(request, env) {
     try {
         console.log('DEBUG env keys:', Object.keys(env));
-        console.log('DEBUG FIREBASE_PRIVATE_KEY type:', typeof env.FIREBASE_PRIVATE_KEY, 'length:', (env.FIREBASE_PRIVATE_KEY || '').length);
+        console.log('DEBUG EMAILJS_PRIVATE_KEY type:', typeof env.EMAILJS_PRIVATE_KEY, 'length:', (env.EMAILJS_PRIVATE_KEY || '').length);
         const { email } = await request.json();
         const emailLower = (email || '').trim().toLowerCase();
         if (!emailLower || !emailLower.includes('@')) {

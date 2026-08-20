@@ -41,6 +41,8 @@ function firestoreDocIdFromEmail(email) {
 // مرحله‌ی ۱: ساخت کد ۶ رقمی، ذخیره در Firestore، ارسال با EmailJS
 async function handleRequestCode(request, env) {
     try {
+        console.log('DEBUG env keys:', Object.keys(env));
+        console.log('DEBUG FIREBASE_CLIENT_EMAIL type:', typeof env.FIREBASE_CLIENT_EMAIL, JSON.stringify(env.FIREBASE_CLIENT_EMAIL));
         const { email } = await request.json();
         const emailLower = (email || '').trim().toLowerCase();
         if (!emailLower || !emailLower.includes('@')) {
@@ -79,11 +81,9 @@ async function handleRequestCode(request, env) {
 }
 
 // مرحله‌ی ۲: بررسی کد؛ در صورت درست بودن، یک «بلیط» کوتاه‌عمر برمی‌گرداند
-async function handleRequestCode(request, env) {
+async function handleVerifyCode(request, env) {
     try {
-        console.log('DEBUG env keys:', Object.keys(env));
-        console.log('DEBUG FIREBASE_CLIENT_EMAIL type:', typeof env.FIREBASE_CLIENT_EMAIL, JSON.stringify(env.FIREBASE_CLIENT_EMAIL));
-        const { email } = await request.json();
+        const { email, code } = await request.json();
         const emailLower = (email || '').trim().toLowerCase();
         const docId = firestoreDocIdFromEmail(emailLower);
         const stored = await firestoreGet(env, `authCodes/${docId}`);

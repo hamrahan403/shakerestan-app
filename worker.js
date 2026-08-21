@@ -216,6 +216,44 @@ const ADMIN_ONLY_WRITE_COLLECTIONS = new Set([
 
 async function checkFsPermission(env, session, op, collection) {
     const isAdmin = !!(session && session.isAdmin);
+    const parts = String(collection).split('/').filter(Boolean);
+
+    // ---------- چت عمومی: خواندن برای همه آزاد، نوشتن فقط برای کاربر واردشده ----------
+    if (parts[0] === 'publicChat') {
+        if (op === 'list' || op === 'get') return true;
+        return !!session;
+    }
+
+    // ---------- چت ناشناس / چت مدیر ----------
+    // 'anonChat' یا 'adminChat' (بدون ادامه): لیست همه‌ی تردها → فقط ادمین
+    // 'anonChat/{uid}' یا 'anonChat/{uid}/messages': فقط خودِ همون کاربر یا ادمین
+    if (parts[0] === 'anonChat' || parts[0] === 'adminChat') {
+        if (parts.length === 1) {
+            if (op === 'list') return isAdmin;
+            return !!session; // set/get تک‌سندی (نادر) - نیاز به نشست
+        }
+        if (!session) return false;
+        const threadUid = parts[1];
+        return isAdmin || session.uid === threadUid;
+    }
+
+    // ---------- چت ویراستاران ----------
+    // 'editors' (بدون ادامه): پروفایل ویراستاران، از قبل توسط ADMIN_ONLY_WRITE_COLLECTIONS پوشش داده می‌شه
+    // 'editors/{editorId}/threads' یا 'editors/{editorId}/threads/{uid}/messages':
+    //   فقط خودِ کاربر صاحب ترد (uid)، خودِ ویراستار مربوطه، یا ادمین
+    // نکته: session فعلی فیلد isEditor/editorId ندارد؛ تا وقتی این فیلد به session اضافه نشود
+    // (نیازمند تغییر در بخش ورود)، ویراستاران فقط از طریق isAdmin یا session.uid === threadUid
+    // (یعنی وقتی خودشان صاحب آن ترد به‌عنوان کاربر عادی هستند) دسترسی خواهند داشت.
+    if (parts[0] === 'editors' && parts.length > 1) {
+        if (!session) return false;
+        if (isAdmin) return true;
+        if (session.editorId && session.editorId === parts[1]) return true;
+        if (parts.length >= 4) {
+            const threadUid = parts[3];
+            return session.uid === threadUid;
+        }
+        return false;
+    }
 
     if (ADMIN_ONLY_WRITE_COLLECTIONS.has(collection)) {
         if (op === 'get' || op === 'list') return true; // خواندن برای همه آزاد

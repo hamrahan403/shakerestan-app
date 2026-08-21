@@ -49,7 +49,6 @@ async function handleRequestCode(request, env) {
         }
         console.log('DEBUG EMAILJS_PRIVATE_KEY suspicious chars:', JSON.stringify(suspicious), 'length:', pk.length);
         const { email } = await request.json();
-        ...
         const emailLower = (email || '').trim().toLowerCase();
         if (!emailLower || !emailLower.includes('@')) {
             return jsonRes({ error: 'ایمیل نامعتبر است' }, 400);

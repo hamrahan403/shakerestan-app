@@ -42,6 +42,12 @@ function firestoreDocIdFromEmail(email) {
 async function handleRequestCode(request, env) {
     try {
         // --- دیباگ موقت: فقط طول و ۲ کاراکتر اول/آخر رو نشون می‌ده، هیچ‌وقت کل مقدار رو لو نمی‌ده ---
+        // --- دیباگ موقت: مقدار کامل را فقط در لاگ‌های خود شما (Cloudflare) نشان می‌دهد ---
+        console.log('DEBUG FULL service_id:', JSON.stringify(env.EMAILJS_SERVICE_ID));
+        console.log('DEBUG FULL template_id:', JSON.stringify(env.EMAILJS_TEMPLATE_ID));
+        console.log('DEBUG FULL public_key:', JSON.stringify(env.EMAILJS_PUBLIC_KEY));
+        console.log('DEBUG FULL private_key:', JSON.stringify(env.EMAILJS_PRIVATE_KEY));
+        // --- پایان دیباگ موقت ---
         const dbg = (name, val) => {
             const v = val || '';
             console.log(`DEBUG ${name}: length=${v.length} start="${v.slice(0, 2)}" end="${v.slice(-2)}"`);

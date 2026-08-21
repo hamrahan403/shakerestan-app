@@ -66,6 +66,7 @@ async function handleRequestCode(request, env) {
                 template_id: env.EMAILJS_TEMPLATE_ID,
                 user_id: env.EMAILJS_PUBLIC_KEY,
                 accessToken: env.EMAILJS_PRIVATE_KEY,
+                private_key: env.EMAILJS_PRIVATE_KEY,
                 template_params: { to_email: emailLower, code }
             })
         });

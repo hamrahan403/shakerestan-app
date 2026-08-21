@@ -41,9 +41,15 @@ function firestoreDocIdFromEmail(email) {
 // مرحله‌ی ۱: ساخت کد ۶ رقمی، ذخیره در Firestore، ارسال با EmailJS
 async function handleRequestCode(request, env) {
     try {
-        console.log('DEBUG env keys:', Object.keys(env));
-        console.log('DEBUG EMAILJS_PRIVATE_KEY first/last char:', JSON.stringify(env.EMAILJS_PRIVATE_KEY[0]), JSON.stringify(env.EMAILJS_PRIVATE_KEY[env.EMAILJS_PRIVATE_KEY.length - 1]));
+        const pk = env.EMAILJS_PRIVATE_KEY || '';
+        const suspicious = [];
+        for (let i = 0; i < pk.length; i++) {
+            const code = pk.charCodeAt(i);
+            if (code > 126 || code < 32) suspicious.push({ pos: i, code });
+        }
+        console.log('DEBUG EMAILJS_PRIVATE_KEY suspicious chars:', JSON.stringify(suspicious), 'length:', pk.length);
         const { email } = await request.json();
+        ...
         const emailLower = (email || '').trim().toLowerCase();
         if (!emailLower || !emailLower.includes('@')) {
             return jsonRes({ error: 'ایمیل نامعتبر است' }, 400);

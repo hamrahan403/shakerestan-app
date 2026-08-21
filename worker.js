@@ -317,6 +317,15 @@ async function handleFsProxy(request, env) {
             const result = await firestoreAdd(env, collection, data || {});
             return jsonRes({ item: result });
         }
+        if (op === 'findByEmail') {
+            // معادل ساده‌ی where('email','==', email) — چون UID کاربران از sha256(email) ساخته می‌شه،
+            // به‌جای جستجوی واقعی، مستقیم UID رو حساب می‌کنیم و همون سند رو می‌خونیم.
+            const email = String((data && data.email) || '').trim().toLowerCase();
+            if (!email) return jsonRes({ error: 'email لازم است' }, 400);
+            const uid = 'u_' + (await sha256Hex(email)).slice(0, 28);
+            const item = await firestoreGet(env, `${collection}/${uid}`);
+            return jsonRes({ item: item ? { ...item, id: uid } : null });
+        }
         return jsonRes({ error: 'op نامعتبر است' }, 400);
     } catch (e) {
         return jsonRes({ error: e.message || 'خطای Firestore' }, 500);

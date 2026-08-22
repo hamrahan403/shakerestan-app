@@ -858,10 +858,19 @@
 
         /* ========== PROFILE ========== */
         .profile-avatar {
+            width: 96px;
+            height: 96px;
             font-size: 64px;
             text-align: center;
-            margin-bottom: 4px;
+            margin: 0 auto 8px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: var(--beige-dark);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
+        .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
         .profile-name {
             text-align: center;
             font-size: 1.3rem;
@@ -1516,9 +1525,9 @@
                     </div>
                     <h3 style="font-size:0.95rem;margin:14px 0 8px;">📌 کارهای محول‌شده</h3>
                     <div id="tasks-assigned"></div>
-                    <h3 style="font-size:0.95rem;margin:14px 0 8px;color:var(--terracotta);">⏰ کارهای تایم‌اضافه</h3>
+                    <h3 style="font-size:0.95rem;margin:14px 0 8px;color:var(--terracotta);">⏰ دیگه کم‌کم داره دیر میشه تحویل بده</h3>
                     <div id="tasks-overdue"></div>
-                    <h3 style="font-size:0.95rem;margin:14px 0 8px;">✅ وظایف تحویل‌داده‌شده</h3>
+                    <h3 style="font-size:0.95rem;margin:14px 0 8px;">✅ کار رو داشته باش...</h3>
                     <div id="tasks-delivered"></div>
                 </div>
 
@@ -1538,6 +1547,9 @@
                 </div>
                 <!-- Public Chat -->
                 <div class="sub-page active" id="sub-public">
+                    <div id="public-chat-admin-tools" style="display:none;text-align:left;margin-bottom:6px;">
+                        <button id="clear-public-chat-btn" style="background:var(--beige-dark);color:var(--terracotta);border:none;border-radius:40px;padding:5px 12px;font-family:var(--font);font-size:0.7rem;cursor:pointer;">🗑️ پاک کردن کل چت</button>
+                    </div>
                     <div class="chat-messages" id="public-chat"></div>
                     <div class="chat-input-row">
                         <input type="text" placeholder="پیام خود را بنویسید..." id="public-msg-input">
@@ -1603,13 +1615,15 @@
             <!-- ========== PROFILE ========== -->
             <div class="page" id="page-profile">
                 <div class="card">
-                    <div class="profile-avatar">🧔🏽</div>
+                    <div class="profile-avatar" id="profile-avatar-display">🧔🏽</div>
                     <div class="profile-name" id="profile-name">کاربر شکرستان</div>
                     <div id="profile-badge" style="text-align:center;color:var(--brown-light);font-size:0.8rem;">عضو از ۱۴۰۲</div>
                     <div class="pattern-divider">✦ ✦ ✦</div>
                     <div id="profile-details"></div>
                     <button class="logout-btn" id="logout-btn">🚪 خروج از حساب</button>
                 </div>
+                <!-- ویرایش پروفایل: فقط برای کاربران ایمیلی (شامل مدیر) -->
+                <div class="card" id="profile-edit-form" style="display:none;"></div>
                 <!-- Admin-only: pending signup approvals -->
                 <div class="card admin-only" style="display:none;">
                     <div class="card-title">📋 درخواست‌های عضویت</div>
@@ -3654,7 +3668,11 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 startTasksListener();
                 startContentListeners();
                 renderAll();
-                showToast(currentUser.isAdmin ? '🎉 خوش آمدید مدیر شکرستان!' : '🎉 خوش آمدید به شکرستان!');
+                if (currentUser.profileIncomplete) {
+                    showToast('👋 کاربر محترم، لطفاً پروفایل خود را از بخش «پروفایل» تکمیل کنید');
+                } else {
+                    showToast(currentUser.isAdmin ? '🎉 خوش آمدید مدیر شکرستان!' : '🎉 خوش آمدید به شکرستان!');
+                }
             } catch (e) {
                 console.error(e);
                 showToast('⚠️ ' + (e.message || 'ورود ناموفق بود'));
@@ -3665,37 +3683,143 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         }
 
         // ---------- نام نمایشی کاربر (Firestore collection "users", doc id = uid) ----------
+        // آواتارهای قابل انتخاب برای پروفایل. مدیر هم از همین لیست انتخاب می‌کند،
+        // ولی هرچی مدیر انتخاب کند دیگر برای بقیه در دسترس نخواهد بود.
+        const PROFILE_AVATARS = [
+            { id: 'a1', img: 'avatars/avatar1.png' },
+            { id: 'a2', img: 'avatars/avatar2.png' },
+            { id: 'a3', img: 'avatars/avatar3.png' },
+            { id: 'a4', img: 'avatars/avatar4.png' },
+            { id: 'a5', img: 'avatars/avatar5.png' },
+            { id: 'a6', img: 'avatars/avatar6.png' },
+            { id: 'a7', img: 'avatars/avatar7.webp' },
+            { id: 'a8', img: 'avatars/avatar8.png' },
+            { id: 'a9', img: 'avatars/avatar9.png' },
+            { id: 'a10', img: 'avatars/avatar10.png' },
+            { id: 'a11', img: 'avatars/avatar11.png' },
+            { id: 'a12', img: 'avatars/avatar12.png' }
+        ];
+        let adminChosenAvatarId = null; // از سرور خوانده می‌شود (settings/adminAvatar)
+        function getAvatarIcon(avatarId) {
+            const found = PROFILE_AVATARS.find(a => a.id === avatarId);
+            return found ? `<img src="${found.img}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : '🧔🏽';
+        }
+
         async function ensureUserDisplayName(user) {
             try {
                 const getResult = await apiFs('get', 'users', { docId: user.uid });
                 const data = getResult.item;
-                if (data && data.name) {
-                    currentUser.name = data.name;
+                if (data && data.profileCompleted) {
+                    currentUser.name = data.chatName || data.name || '';
+                    currentUser.firstName = data.firstName || '';
+                    currentUser.lastName = data.lastName || '';
+                    currentUser.bio = data.bio || '';
+                    currentUser.avatarId = data.avatarId || '';
+                    currentUser.profileIncomplete = false;
                     return;
                 }
-                // نام ذخیره نشده؛ از کاربر بپرس
-                const name = await new Promise((resolve) => {
-                    openAdminModal('👋 نام شما در چت چی باشه؟', `
-                        <div class="admin-field">
-                            <label>نام نمایشی در چت *</label>
-                            <input type="text" name="displayName" required placeholder="مثلاً حسام محمدی">
-                        </div>
-                    `, async (form) => {
-                        const val = form.displayName.value.trim();
-                        if (!val) throw new Error('لطفاً یک نام وارد کنید');
-                        resolve(val);
-                    });
-                    // این مودال قابل بستن نیست تا نام حتماً وارد شود
-                    $('#close-admin-modal').style.display = 'none';
-                });
-                await apiFs('set', 'users', { docId: user.uid, data: { name, email: user.email || '', createdAtMs: Date.now() } });
-                currentUser.name = name;
-                $('#close-admin-modal').style.display = '';
-                closeAdminModal();
-                showToast('✅ نام شما ذخیره شد');
+                // پروفایل کامل نشده: از قسمت قبل از @ ایمیل به‌عنوان نام موقت استفاده کن
+                const fallbackName = (user.email || '').split('@')[0] || 'کاربر';
+                currentUser.name = data && data.chatName ? data.chatName : fallbackName;
+                currentUser.firstName = (data && data.firstName) || '';
+                currentUser.lastName = (data && data.lastName) || '';
+                currentUser.bio = (data && data.bio) || '';
+                currentUser.avatarId = (data && data.avatarId) || '';
+                currentUser.profileIncomplete = true;
+                if (!data) {
+                    await apiFs('set', 'users', { docId: user.uid, data: { name: fallbackName, chatName: fallbackName, email: user.email || '', profileCompleted: false, createdAtMs: Date.now() } });
+                }
             } catch (e) {
                 console.error('ensureUserDisplayName error:', e);
             }
+        }
+
+        // ---------- ویرایش پروفایل (فقط برای کاربران واردشده با ایمیل، از جمله مدیر) ----------
+        async function renderProfileEditForm() {
+            const el = $('#profile-edit-form');
+            if (!el) return;
+            if (!currentUser.email) { el.style.display = 'none'; return; }
+            el.style.display = 'block';
+
+            if (adminChosenAvatarId === null) {
+                try {
+                    const result = await apiFs('get', 'settings', { docId: 'adminAvatar' });
+                    adminChosenAvatarId = (result.item && result.item.avatarId) || '';
+                } catch (e) { adminChosenAvatarId = ''; }
+            }
+
+            const avatarsHtml = PROFILE_AVATARS
+                .map(a => {
+                    const isLockedForMe = !currentUser.isAdmin && adminChosenAvatarId === a.id;
+                    return `
+                    <div onclick="${isLockedForMe ? '' : `selectProfileAvatar('${a.id}')`}" class="profile-avatar-option ${currentUser.avatarId === a.id ? 'selected' : ''}"
+                         style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:54px;height:54px;border-radius:50%;overflow:hidden;cursor:${isLockedForMe ? 'not-allowed' : 'pointer'};margin:3px;background:var(--beige-dark);opacity:${isLockedForMe ? '0.35' : '1'};box-shadow:${currentUser.avatarId === a.id ? '0 0 0 3px var(--gold)' : 'none'};">
+                        <img src="${a.img}" style="width:100%;height:100%;object-fit:cover;">
+                        ${isLockedForMe ? `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.1rem;">🔒</span>` : ''}
+                    </div>
+                `;
+                }).join('');
+            el.innerHTML = `
+                <div class="card-title">✏️ ویرایش پروفایل</div>
+                ${currentUser.profileIncomplete ? `<div style="background:#fff3cd;color:#8a6d1a;border-radius:8px;padding:8px 10px;font-size:0.75rem;margin-bottom:10px;">👋 کاربر محترم، لطفاً پروفایل خود را تکمیل کنید</div>` : ''}
+                <div class="admin-field"><label>نام</label><input type="text" id="profile-firstname" value="${currentUser.firstName || ''}"></div>
+                <div class="admin-field"><label>نام خانوادگی</label><input type="text" id="profile-lastname" value="${currentUser.lastName || ''}"></div>
+                <div class="admin-field"><label>نام نمایشی در چت عمومی</label><input type="text" id="profile-chatname" value="${currentUser.name || ''}"></div>
+                <div class="admin-field"><label>بیوگرافی</label><textarea id="profile-bio" rows="2" style="width:100%;font-family:var(--font);border-radius:8px;border:1px solid var(--beige-dark);padding:8px;">${currentUser.bio || ''}</textarea></div>
+                <div class="admin-field"><label>عکس پروفایل ${currentUser.isAdmin ? '<span style="font-size:0.7rem;color:var(--brown-light);">(هرچی انتخاب کنید، برای بقیه قفل می‌شود)</span>' : ''}</label><div style="display:flex;flex-wrap:wrap;">${avatarsHtml}</div></div>
+                <button id="save-profile-btn" style="width:100%;background:var(--gold);border:none;border-radius:40px;padding:10px;font-family:var(--font);font-size:0.85rem;cursor:pointer;margin-top:6px;">💾 ذخیره پروفایل</button>
+            `;
+            $('#save-profile-btn').addEventListener('click', saveProfile);
+        }
+        window.selectProfileAvatar = function(id) {
+            if (!currentUser.isAdmin && adminChosenAvatarId === id) return; // این آواتار برای مدیر رزرو شده
+            currentUser.avatarId = id;
+            renderProfileEditForm();
+        };
+        async function saveProfile() {
+            const firstName = $('#profile-firstname').value.trim();
+            const lastName = $('#profile-lastname').value.trim();
+            const chatName = $('#profile-chatname').value.trim();
+            const bio = $('#profile-bio').value.trim();
+            if (!firstName || !lastName || !chatName) {
+                showToast('⚠️ نام، نام خانوادگی و نام نمایشی الزامی است');
+                return;
+            }
+            if (!currentUser.isAdmin && currentUser.avatarId && adminChosenAvatarId === currentUser.avatarId) {
+                showToast('⚠️ این عکس مخصوص مدیر است، یکی دیگر انتخاب کنید');
+                return;
+            }
+            try {
+                await apiFs('set', 'users', {
+                    docId: currentUser.uid,
+                    data: {
+                        firstName, lastName, chatName, bio,
+                        avatarId: currentUser.avatarId || '',
+                        name: chatName, email: currentUser.email,
+                        profileCompleted: true, updatedAtMs: Date.now()
+                    }
+                });
+                if (currentUser.isAdmin && currentUser.avatarId) {
+                    await apiFs('set', 'settings', { docId: 'adminAvatar', data: { avatarId: currentUser.avatarId } });
+                    adminChosenAvatarId = currentUser.avatarId;
+                }
+                currentUser.firstName = firstName;
+                currentUser.lastName = lastName;
+                currentUser.name = chatName;
+                currentUser.bio = bio;
+                currentUser.profileIncomplete = false;
+                showToast('✅ پروفایل ذخیره شد');
+                renderProfilePage();
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ ذخیره ناموفق بود: ' + (e.message || ''));
+            }
+        }
+        async function renderProfilePage() {
+            $('#profile-avatar-display').innerHTML = getAvatarIcon(currentUser.avatarId);
+            $('#profile-name').textContent = (currentUser.firstName && currentUser.lastName)
+                ? `${currentUser.firstName} ${currentUser.lastName}` : (currentUser.name || 'کاربر شکرستان');
+            await renderProfileEditForm();
         }
 
         async function handleSignup() {
@@ -3830,6 +3954,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             if (page === 'notes') renderNotesPage();
             if (page === 'videos') { renderVideoSubjectScroller(); renderVideos(); }
             if (page === 'groups') renderTaskBoard();
+            if (page === 'profile') renderProfilePage();
             if (page === 'chat') {
                 renderPublicChat();
                 if (currentChatSubTab === 'anonymous') initAnonChatTab();
@@ -4826,15 +4951,45 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         // ---------- Rendering: Chat ----------
         function renderPublicChat() {
             const el = $('#public-chat');
+            const toolsEl = $('#public-chat-admin-tools');
+            if (toolsEl) toolsEl.style.display = currentUser.isAdmin ? 'block' : 'none';
             el.innerHTML = DATA.publicChat.map(m => `
-                <div class="chat-msg ${m.isAdminMsg ? 'admin-msg' : ''}">
-                    <div class="msg-user">${m.isAdminMsg ? '🧔🏽 مدیریت' : m.user}</div>
+                <div class="chat-msg ${m.isAdminMsg ? 'admin-msg' : ''}" style="position:relative;">
+                    <div class="msg-user">${m.isAdminMsg ? '🧔🏽 مدیریت' : (m.user + (m.isEditorMsg ? ' <span style="filter:grayscale(1) brightness(1.5);" title="ویراستار">👑</span>' : ''))}</div>
                     ${m.msg}
                     <div class="msg-time">${m.time}</div>
+                    ${currentUser.isAdmin && m.id ? `<span onclick="deleteOnePublicMsg('${m.id}')" style="position:absolute;top:2px;left:6px;color:var(--terracotta);font-size:0.7rem;cursor:pointer;">✕</span>` : ''}
                 </div>
             `).join('');
             el.scrollTop = el.scrollHeight;
         }
+
+        window.deleteOnePublicMsg = async function(id) {
+            if (!confirm('این پیام حذف شود؟')) return;
+            try {
+                await apiFs('delete', 'publicChat', { docId: id });
+                DATA.publicChat = DATA.publicChat.filter(m => m.id !== id);
+                renderPublicChat();
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ حذف ناموفق بود: ' + (e.message || ''));
+            }
+        };
+
+        window.clearAllPublicChat = async function() {
+            if (!confirm('همه‌ی پیام‌های چت عمومی برای همیشه پاک شوند؟ این کار قابل بازگشت نیست.')) return;
+            try {
+                const result = await apiFs('list', 'publicChat', {});
+                const items = result.items || [];
+                await Promise.all(items.map(m => apiFs('delete', 'publicChat', { docId: m.id })));
+                DATA.publicChat = [];
+                renderPublicChat();
+                showToast('✅ چت عمومی پاک شد');
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ پاک کردن ناموفق بود: ' + (e.message || ''));
+            }
+        };
 
         // ---------- گفتگوی عمومی (polling به‌جای onSnapshot زنده) ----------
         let publicChatPollInterval = null;
@@ -4863,6 +5018,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             const optimisticMsg = {
                 user: currentUser.isAdmin ? '🧔🏽 مدیریت' : (currentUser.name || 'کاربر'),
                 isAdminMsg: !!currentUser.isAdmin,
+                isEditorMsg: !!currentUser.isEditor,
                 msg: text,
                 time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
                 createdAtMs: Date.now()
@@ -5086,7 +5242,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             const fromAdmin = currentUser.isAdmin;
             try {
                 const meta = { lastMessageAtMs: Date.now() };
-                if (!fromAdmin) meta.name = currentUser.name || 'کاربر';
+                if (!fromAdmin) meta.name = ((currentUser.firstName && currentUser.lastName) ? `${currentUser.firstName} ${currentUser.lastName}` : currentUser.name) || 'کاربر';
                 await Promise.all([
                     apiFs('set', 'adminChat', { docId: currentAdminChatThreadUid, data: meta }),
                     apiFs('add', 'adminChat/' + currentAdminChatThreadUid + '/messages', {
@@ -5243,8 +5399,12 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             input.value = '';
             const fromEditor = !!currentUser.isEditor;
             try {
+                const threadMeta = { lastMessageAtMs: Date.now() };
+                if (!fromEditor) {
+                    threadMeta.name = ((currentUser.firstName && currentUser.lastName) ? `${currentUser.firstName} ${currentUser.lastName}` : currentUser.name) || 'کاربر';
+                }
                 await Promise.all([
-                    apiFs('set', 'editors/' + currentEditorId + '/threads', { docId: currentEditorThreadUid, data: { lastMessageAtMs: Date.now() } }),
+                    apiFs('update', 'editors/' + currentEditorId + '/threads', { docId: currentEditorThreadUid, data: threadMeta }),
                     apiFs('add', 'editors/' + currentEditorId + '/threads/' + currentEditorThreadUid + '/messages', {
                         data: {
                             fromEditor,
@@ -5679,6 +5839,9 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                         applyRoleUI();
                         startTasksListener();
                         renderAll();
+                        if (currentUser.profileIncomplete) {
+                            showToast('👋 کاربر محترم، لطفاً پروفایل خود را از بخش «پروفایل» تکمیل کنید');
+                        }
                         return;
                     }
 
@@ -5776,8 +5939,12 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 if (e.target === adminModal) closeAdminModal();
             });
 
+            // Group back button
+            $('#back-to-groups').addEventListener('click', backToGroups);
+
             // Chat send
             $('#public-send-btn').addEventListener('click', sendPublicMsg);
+            $('#clear-public-chat-btn').addEventListener('click', clearAllPublicChat);
             $('#public-msg-input').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') sendPublicMsg();
             });

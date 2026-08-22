@@ -1617,17 +1617,24 @@
                 <div class="card">
                     <div class="profile-avatar" id="profile-avatar-display">🧔🏽</div>
                     <div class="profile-name" id="profile-name">کاربر شکرستان</div>
-                    <div id="profile-badge" style="text-align:center;color:var(--brown-light);font-size:0.8rem;">عضو از ۱۴۰۲</div>
+                    <div id="profile-bio-display" style="text-align:center;color:var(--brown-light);font-size:0.78rem;margin-top:2px;"></div>
+                    <div id="profile-level-badge" style="text-align:center;margin-top:6px;"></div>
+                    <button id="edit-profile-btn" style="display:block;margin:12px auto 0;background:var(--beige-dark);border:none;border-radius:40px;padding:7px 18px;font-family:var(--font);font-size:0.78rem;cursor:pointer;">✏️ ویرایش پروفایل</button>
                     <div class="pattern-divider">✦ ✦ ✦</div>
-                    <div id="profile-details"></div>
+                    <div class="profile-detail"><span>📱 نسخه‌ی برنامه</span><span>۱.۰.۰</span></div>
+                    <div class="profile-detail" id="profile-join-date-row" style="display:none;"><span>📅 تاریخ عضویت</span><span id="profile-join-date"></span></div>
+                    <div class="profile-detail" id="profile-email-row" style="display:none;"><span>📧 ایمیل</span><span id="profile-email-value"></span></div>
                     <button class="logout-btn" id="logout-btn">🚪 خروج از حساب</button>
                 </div>
-                <!-- ویرایش پروفایل: فقط برای کاربران ایمیلی (شامل مدیر) -->
-                <div class="card" id="profile-edit-form" style="display:none;"></div>
                 <!-- Admin-only: pending signup approvals -->
                 <div class="card admin-only" style="display:none;">
                     <div class="card-title">📋 درخواست‌های عضویت</div>
                     <div id="pending-requests-list"></div>
+                </div>
+                <!-- Admin-only: همه‌ی کاربران (ایمیلی و تلفنی) -->
+                <div class="card admin-only" style="display:none;">
+                    <div class="card-title">👥 تمام کاربران</div>
+                    <div id="all-users-list"></div>
                 </div>
                 <div style="text-align:center;font-size:0.6rem;color:var(--brown-light);margin-top:8px;">
                     ساخته شده با ❤️ در شکرستان
@@ -3668,11 +3675,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 startTasksListener();
                 startContentListeners();
                 renderAll();
-                if (currentUser.profileIncomplete) {
-                    showToast('👋 کاربر محترم، لطفاً پروفایل خود را از بخش «پروفایل» تکمیل کنید');
-                } else {
-                    showToast(currentUser.isAdmin ? '🎉 خوش آمدید مدیر شکرستان!' : '🎉 خوش آمدید به شکرستان!');
-                }
+                showToast(currentUser.isAdmin ? '🎉 خوش آمدید مدیر شکرستان!' : '🎉 خوش آمدید به شکرستان!');
             } catch (e) {
                 console.error(e);
                 showToast('⚠️ ' + (e.message || 'ورود ناموفق بود'));
@@ -3702,7 +3705,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         let adminChosenAvatarId = null; // از سرور خوانده می‌شود (settings/adminAvatar)
         function getAvatarIcon(avatarId) {
             const found = PROFILE_AVATARS.find(a => a.id === avatarId);
-            return found ? `<img src="${found.img}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : '🧔🏽';
+            return found ? `<img src="${found.img}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'🧔🏽',style:'font-size:2.5rem;'}))" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : '🧔🏽';
         }
 
         async function ensureUserDisplayName(user) {
@@ -3715,6 +3718,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                     currentUser.lastName = data.lastName || '';
                     currentUser.bio = data.bio || '';
                     currentUser.avatarId = data.avatarId || '';
+                    currentUser.joinedAtMs = data.createdAtMs || null;
                     currentUser.profileIncomplete = false;
                     return;
                 }
@@ -3725,6 +3729,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 currentUser.lastName = (data && data.lastName) || '';
                 currentUser.bio = (data && data.bio) || '';
                 currentUser.avatarId = (data && data.avatarId) || '';
+                currentUser.joinedAtMs = (data && data.createdAtMs) || Date.now();
                 currentUser.profileIncomplete = true;
                 if (!data) {
                     await apiFs('set', 'users', { docId: user.uid, data: { name: fallbackName, chatName: fallbackName, email: user.email || '', profileCompleted: false, createdAtMs: Date.now() } });
@@ -3734,92 +3739,146 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             }
         }
 
-        // ---------- ویرایش پروفایل (فقط برای کاربران واردشده با ایمیل، از جمله مدیر) ----------
-        async function renderProfileEditForm() {
-            const el = $('#profile-edit-form');
-            if (!el) return;
-            if (!currentUser.email) { el.style.display = 'none'; return; }
-            el.style.display = 'block';
+        function userLevelBadge() {
+            if (currentUser.isAdmin) return { label: 'مدیریت', color: 'var(--gold)' };
+            if (currentUser.isEditor) return { label: 'ویراستار 💪', color: 'var(--teal-light)' };
+            if (currentUser.isTaskAssignee) return { label: 'عضو همراهان 😎', color: 'var(--turquoise)' };
+            return { label: 'کاربر عادی', color: 'var(--beige-dark)' };
+        }
 
+        // ---------- ویرایش پروفایل (به‌صورت مودال، فقط برای کاربران واردشده با ایمیل، از جمله مدیر) ----------
+        async function openProfileEditModal() {
             if (adminChosenAvatarId === null) {
                 try {
                     const result = await apiFs('get', 'settings', { docId: 'adminAvatar' });
                     adminChosenAvatarId = (result.item && result.item.avatarId) || '';
                 } catch (e) { adminChosenAvatarId = ''; }
             }
-
-            const avatarsHtml = PROFILE_AVATARS
-                .map(a => {
-                    const isLockedForMe = !currentUser.isAdmin && adminChosenAvatarId === a.id;
-                    return `
-                    <div onclick="${isLockedForMe ? '' : `selectProfileAvatar('${a.id}')`}" class="profile-avatar-option ${currentUser.avatarId === a.id ? 'selected' : ''}"
+            const avatarsHtml = PROFILE_AVATARS.map(a => {
+                const isLockedForMe = !currentUser.isAdmin && adminChosenAvatarId === a.id;
+                return `
+                    <div onclick="${isLockedForMe ? '' : `selectProfileAvatar('${a.id}')`}" id="avatar-opt-${a.id}" class="profile-avatar-option"
                          style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:54px;height:54px;border-radius:50%;overflow:hidden;cursor:${isLockedForMe ? 'not-allowed' : 'pointer'};margin:3px;background:var(--beige-dark);opacity:${isLockedForMe ? '0.35' : '1'};box-shadow:${currentUser.avatarId === a.id ? '0 0 0 3px var(--gold)' : 'none'};">
-                        <img src="${a.img}" style="width:100%;height:100%;object-fit:cover;">
+                        <img src="${a.img}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'🧔🏽',style:'font-size:1.4rem;'}))" style="width:100%;height:100%;object-fit:cover;">
                         ${isLockedForMe ? `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.1rem;">🔒</span>` : ''}
                     </div>
                 `;
-                }).join('');
-            el.innerHTML = `
-                <div class="card-title">✏️ ویرایش پروفایل</div>
-                ${currentUser.profileIncomplete ? `<div style="background:#fff3cd;color:#8a6d1a;border-radius:8px;padding:8px 10px;font-size:0.75rem;margin-bottom:10px;">👋 کاربر محترم، لطفاً پروفایل خود را تکمیل کنید</div>` : ''}
-                <div class="admin-field"><label>نام</label><input type="text" id="profile-firstname" value="${currentUser.firstName || ''}"></div>
-                <div class="admin-field"><label>نام خانوادگی</label><input type="text" id="profile-lastname" value="${currentUser.lastName || ''}"></div>
-                <div class="admin-field"><label>نام نمایشی در چت عمومی</label><input type="text" id="profile-chatname" value="${currentUser.name || ''}"></div>
-                <div class="admin-field"><label>بیوگرافی</label><textarea id="profile-bio" rows="2" style="width:100%;font-family:var(--font);border-radius:8px;border:1px solid var(--beige-dark);padding:8px;">${currentUser.bio || ''}</textarea></div>
-                <div class="admin-field"><label>عکس پروفایل ${currentUser.isAdmin ? '<span style="font-size:0.7rem;color:var(--brown-light);">(هرچی انتخاب کنید، برای بقیه قفل می‌شود)</span>' : ''}</label><div style="display:flex;flex-wrap:wrap;">${avatarsHtml}</div></div>
-                <button id="save-profile-btn" style="width:100%;background:var(--gold);border:none;border-radius:40px;padding:10px;font-family:var(--font);font-size:0.85rem;cursor:pointer;margin-top:6px;">💾 ذخیره پروفایل</button>
-            `;
-            $('#save-profile-btn').addEventListener('click', saveProfile);
-        }
-        window.selectProfileAvatar = function(id) {
-            if (!currentUser.isAdmin && adminChosenAvatarId === id) return; // این آواتار برای مدیر رزرو شده
-            currentUser.avatarId = id;
-            renderProfileEditForm();
-        };
-        async function saveProfile() {
-            const firstName = $('#profile-firstname').value.trim();
-            const lastName = $('#profile-lastname').value.trim();
-            const chatName = $('#profile-chatname').value.trim();
-            const bio = $('#profile-bio').value.trim();
-            if (!firstName || !lastName || !chatName) {
-                showToast('⚠️ نام، نام خانوادگی و نام نمایشی الزامی است');
-                return;
-            }
-            if (!currentUser.isAdmin && currentUser.avatarId && adminChosenAvatarId === currentUser.avatarId) {
-                showToast('⚠️ این عکس مخصوص مدیر است، یکی دیگر انتخاب کنید');
-                return;
-            }
-            try {
+            }).join('');
+            openAdminModal('✏️ ویرایش پروفایل', `
+                <div class="admin-field"><label>نام</label><input type="text" name="firstName" value="${currentUser.firstName || ''}" required></div>
+                <div class="admin-field"><label>نام خانوادگی</label><input type="text" name="lastName" value="${currentUser.lastName || ''}" required></div>
+                <div class="admin-field"><label>نام نمایشی در چت عمومی</label><input type="text" name="chatName" value="${currentUser.name || ''}" required></div>
+                <div class="admin-field"><label>بیوگرافی</label><textarea name="bio" rows="2" style="width:100%;font-family:var(--font);border-radius:8px;border:1px solid var(--beige-dark);padding:8px;">${currentUser.bio || ''}</textarea></div>
+                <div class="admin-field"><label>عکس پروفایل ${currentUser.isAdmin ? '<span style="font-size:0.7rem;color:var(--brown-light);">(هرچی انتخاب کنید، برای بقیه قفل می‌شود)</span>' : ''}</label><div id="avatar-picker-grid" style="display:flex;flex-wrap:wrap;">${avatarsHtml}</div></div>
+            `, async (form) => {
+                const firstName = form.firstName.value.trim();
+                const lastName = form.lastName.value.trim();
+                const chatName = form.chatName.value.trim();
+                const bio = form.bio.value.trim();
+                if (!firstName || !lastName || !chatName) throw new Error('نام، نام خانوادگی و نام نمایشی الزامی است');
+                if (!currentUser.isAdmin && currentUser.pendingAvatarId && adminChosenAvatarId === currentUser.pendingAvatarId) {
+                    throw new Error('این عکس مخصوص مدیر است، یکی دیگر انتخاب کنید');
+                }
+                const avatarId = currentUser.pendingAvatarId !== undefined ? currentUser.pendingAvatarId : (currentUser.avatarId || '');
                 await apiFs('set', 'users', {
                     docId: currentUser.uid,
                     data: {
-                        firstName, lastName, chatName, bio,
-                        avatarId: currentUser.avatarId || '',
+                        firstName, lastName, chatName, bio, avatarId,
                         name: chatName, email: currentUser.email,
-                        profileCompleted: true, updatedAtMs: Date.now()
+                        profileCompleted: true, createdAtMs: currentUser.joinedAtMs || Date.now(), updatedAtMs: Date.now()
                     }
                 });
-                if (currentUser.isAdmin && currentUser.avatarId) {
-                    await apiFs('set', 'settings', { docId: 'adminAvatar', data: { avatarId: currentUser.avatarId } });
-                    adminChosenAvatarId = currentUser.avatarId;
+                if (currentUser.isAdmin && avatarId) {
+                    await apiFs('set', 'settings', { docId: 'adminAvatar', data: { avatarId } });
+                    adminChosenAvatarId = avatarId;
                 }
                 currentUser.firstName = firstName;
                 currentUser.lastName = lastName;
                 currentUser.name = chatName;
                 currentUser.bio = bio;
+                currentUser.avatarId = avatarId;
                 currentUser.profileIncomplete = false;
+                delete currentUser.pendingAvatarId;
                 showToast('✅ پروفایل ذخیره شد');
+                closeAdminModal();
                 renderProfilePage();
-            } catch (e) {
-                console.error(e);
-                showToast('⚠️ ذخیره ناموفق بود: ' + (e.message || ''));
-            }
+            });
+            currentUser.pendingAvatarId = currentUser.avatarId || '';
         }
+        window.selectProfileAvatar = function(id) {
+            if (!currentUser.isAdmin && adminChosenAvatarId === id) return; // این آواتار برای مدیر رزرو شده
+            currentUser.pendingAvatarId = id;
+            $$('#avatar-picker-grid .profile-avatar-option').forEach(el => { el.style.boxShadow = 'none'; });
+            const chosen = $('#avatar-opt-' + id);
+            if (chosen) chosen.style.boxShadow = '0 0 0 3px var(--gold)';
+        };
+
         async function renderProfilePage() {
             $('#profile-avatar-display').innerHTML = getAvatarIcon(currentUser.avatarId);
             $('#profile-name').textContent = (currentUser.firstName && currentUser.lastName)
                 ? `${currentUser.firstName} ${currentUser.lastName}` : (currentUser.name || 'کاربر شکرستان');
-            await renderProfileEditForm();
+            $('#profile-bio-display').textContent = currentUser.bio || '';
+            const badge = userLevelBadge();
+            $('#profile-level-badge').innerHTML = `<span style="background:${badge.color};padding:4px 14px;border-radius:40px;font-size:0.75rem;">${badge.label}</span>`;
+
+            const editBtn = $('#edit-profile-btn');
+            editBtn.style.display = currentUser.email ? 'block' : 'none';
+
+            const joinRow = $('#profile-join-date-row');
+            if (currentUser.joinedAtMs) {
+                joinRow.style.display = 'flex';
+                $('#profile-join-date').textContent = new Date(currentUser.joinedAtMs).toLocaleDateString('fa-IR');
+            } else {
+                joinRow.style.display = 'none';
+            }
+            const emailRow = $('#profile-email-row');
+            if (currentUser.email) {
+                emailRow.style.display = 'flex';
+                $('#profile-email-value').textContent = currentUser.email;
+            } else {
+                emailRow.style.display = 'none';
+            }
+
+            if (currentUser.isAdmin) renderAllUsersList();
+        }
+
+        // Admin: نمایش تمام کاربران (ایمیلی + تلفنی)
+        async function renderAllUsersList() {
+            const el = $('#all-users-list');
+            if (!el) return;
+            el.innerHTML = '<div style="text-align:center;color:var(--brown-light);font-size:0.75rem;">در حال بارگذاری...</div>';
+            try {
+                const [emailUsersRes, phoneUsersRes] = await Promise.all([
+                    apiFs('list', 'users', { orderByField: 'createdAtMs', orderByDir: 'desc' }),
+                    apiFs('list', 'pendingRequests', { orderByField: 'createdAtMs', orderByDir: 'desc' })
+                ]);
+                const emailUsers = (emailUsersRes.items || []).map(u => ({
+                    label: (u.firstName && u.lastName) ? `${u.firstName} ${u.lastName}` : (u.name || u.email || 'کاربر'),
+                    sub: u.email || '', kind: 'ایمیلی', status: u.profileCompleted ? '✅' : '⏳ پروفایل ناقص'
+                }));
+                const phoneUsers = (phoneUsersRes.items || []).filter(r => r.status !== 'rejected').map(r => ({
+                    label: `${r.firstName || ''} ${r.lastName || ''}`.trim() || 'کاربر',
+                    sub: r.phone || '', kind: 'تلفنی',
+                    status: (r.status === 'approved' || r.approved) ? '✅ تایید شده' : '⏳ در انتظار تایید'
+                }));
+                const all = [...emailUsers, ...phoneUsers];
+                if (!all.length) {
+                    el.innerHTML = `<div style="text-align:center;color:var(--brown-light);font-size:0.8rem;padding:8px 0;">کاربری وجود ندارد</div>`;
+                    return;
+                }
+                el.innerHTML = all.map(u => `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dashed var(--beige-dark);">
+                        <div>
+                            <div style="font-weight:600;font-size:0.82rem;">${u.label}</div>
+                            <div style="font-size:0.68rem;color:var(--brown-light);">${u.sub} • ${u.kind}</div>
+                        </div>
+                        <span style="font-size:0.68rem;">${u.status}</span>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error(e);
+                el.innerHTML = `<div style="text-align:center;color:var(--terracotta);font-size:0.75rem;">خطا در بارگذاری کاربران</div>`;
+            }
         }
 
         async function handleSignup() {
@@ -5839,9 +5898,6 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                         applyRoleUI();
                         startTasksListener();
                         renderAll();
-                        if (currentUser.profileIncomplete) {
-                            showToast('👋 کاربر محترم، لطفاً پروفایل خود را از بخش «پروفایل» تکمیل کنید');
-                        }
                         return;
                     }
 
@@ -5939,6 +5995,9 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 if (e.target === adminModal) closeAdminModal();
             });
 
+            // Group back button
+            $('#back-to-groups').addEventListener('click', backToGroups);
+
             // Chat send
             $('#public-send-btn').addEventListener('click', sendPublicMsg);
             $('#clear-public-chat-btn').addEventListener('click', clearAllPublicChat);
@@ -5974,6 +6033,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             });
 
             // Logout
+            $('#edit-profile-btn').addEventListener('click', openProfileEditModal);
             $('#logout-btn').addEventListener('click', () => {
                 if (confirm('آیا از خروج از حساب خود مطمئن هستید؟')) {
                     isLoggedIn = false;

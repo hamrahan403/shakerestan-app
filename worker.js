@@ -108,6 +108,16 @@ async function handleVerifyCode(request, env) {
 
 // مرحله‌ی نهایی ورود ایمیلی: uid را خودِ Worker می‌سازد (دیگر نیازی به signInAnonymously نیست)
 // و یک «توکن نشست» طولانی‌مدت برمی‌گرداند که از این پس هویت کاربر در همه‌ی درخواست‌هاست.
+async function findEditorByEmail(env, email) {
+    try {
+        const editors = await firestoreList(env, 'editors', {});
+        const match = editors.find(ed => (ed.email || '').toLowerCase() === email.toLowerCase());
+        return match ? match.id : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 async function handleCompleteLogin(request, env) {
     const { ticket } = await request.json();
     const payload = await verifyTicket(env.WORKER_AUTH_SECRET, ticket);
@@ -115,14 +125,15 @@ async function handleCompleteLogin(request, env) {
 
     const uid = 'u_' + (await sha256Hex(payload.email)).slice(0, 28);
     const isAdmin = payload.email === ADMIN_EMAIL;
+    const editorId = isAdmin ? null : await findEditorByEmail(env, payload.email);
 
     await firestoreSet(env, `verifiedEmails/${uid}`, { email: payload.email, isAdmin, verifiedAtMs: Date.now() });
 
     const session = await signTicket(env.WORKER_AUTH_SECRET, {
-        uid, email: payload.email, isAdmin, kind: 'email',
+        uid, email: payload.email, isAdmin, kind: 'email', editorId: editorId || null,
         exp: Date.now() + SESSION_TTL_MS
     });
-    return jsonRes({ session, uid, email: payload.email, isAdmin });
+    return jsonRes({ session, uid, email: payload.email, isAdmin, editorId: editorId || null });
 }
 
 // =====================================================================
@@ -164,9 +175,14 @@ async function handleSessionStatus(request, env) {
     if (!session) return jsonRes({ error: 'نشست نامعتبر است' }, 401);
 
     if (session.kind === 'email') {
+        const editorId = session.isAdmin ? null : await findEditorByEmail(env, session.email);
+        const newSession = await signTicket(env.WORKER_AUTH_SECRET, {
+            uid: session.uid, email: session.email, isAdmin: session.isAdmin, kind: 'email',
+            editorId: editorId || null, exp: Date.now() + SESSION_TTL_MS
+        });
         return jsonRes({
-            status: 'active', kind: 'email',
-            uid: session.uid, email: session.email, isAdmin: session.isAdmin
+            status: 'active', kind: 'email', session: newSession,
+            uid: session.uid, email: session.email, isAdmin: session.isAdmin, editorId: editorId || null
         });
     }
 
@@ -214,43 +230,55 @@ const ADMIN_ONLY_WRITE_COLLECTIONS = new Set([
     'notes', 'videos', 'subjects', 'announcements', 'collabCalls', 'editors', 'taskAssignees'
 ]);
 
-async function checkFsPermission(env, session, op, collection) {
+async function checkFsPermission(env, session, op, collection, docId) {
     const isAdmin = !!(session && session.isAdmin);
+    const isBlockedGuest = !!(session && session.isGuest); // کاربر تلفنی که هنوز تایید نشده
+
+    // ---------- بخش چت کاملاً برای مهمان/تلفنیِ تاییدنشده قفل است ----------
+    const CHAT_COLLECTIONS = ['publicChat', 'anonChat', 'adminChat', 'editors'];
+    if (CHAT_COLLECTIONS.includes(String(collection).split('/')[0]) && isBlockedGuest) {
+        return false;
+    }
+
     const parts = String(collection).split('/').filter(Boolean);
 
-    // ---------- چت عمومی: خواندن برای همه آزاد، نوشتن فقط برای کاربر واردشده ----------
+    // ---------- چت عمومی: خواندن برای همه آزاد، ارسال برای کاربر واردشده، حذف فقط ادمین ----------
     if (parts[0] === 'publicChat') {
         if (op === 'list' || op === 'get') return true;
+        if (op === 'delete') return isAdmin;
         return !!session;
     }
 
     // ---------- چت ناشناس / چت مدیر ----------
-    // 'anonChat' یا 'adminChat' (بدون ادامه): لیست همه‌ی تردها → فقط ادمین
-    // 'anonChat/{uid}' یا 'anonChat/{uid}/messages': فقط خودِ همون کاربر یا ادمین
+    // 'anonChat' یا 'adminChat' (بدون ادامه، docId = uid خود کاربر): فقط خودِ همون کاربر یا ادمین
+    // 'anonChat/{uid}/messages': فقط خودِ همون کاربر یا ادمین
     if (parts[0] === 'anonChat' || parts[0] === 'adminChat') {
         if (parts.length === 1) {
             if (op === 'list') return isAdmin;
-            return !!session; // set/get تک‌سندی (نادر) - نیاز به نشست
+            if (!session) return false;
+            // set/update روی خودِ سند ترد: docId باید uid خودِ کاربر باشد (یا ادمین)
+            return isAdmin || (docId && session.uid === docId);
         }
         if (!session) return false;
-        const threadUid = parts[1];
+        const threadUid = parts[1]; // .../{uid}/messages
         return isAdmin || session.uid === threadUid;
     }
 
     // ---------- چت ویراستاران ----------
     // 'editors' (بدون ادامه): پروفایل ویراستاران، از قبل توسط ADMIN_ONLY_WRITE_COLLECTIONS پوشش داده می‌شه
-    // 'editors/{editorId}/threads' یا 'editors/{editorId}/threads/{uid}/messages':
-    //   فقط خودِ کاربر صاحب ترد (uid)، خودِ ویراستار مربوطه، یا ادمین
-    // نکته: session فعلی فیلد isEditor/editorId ندارد؛ تا وقتی این فیلد به session اضافه نشود
-    // (نیازمند تغییر در بخش ورود)، ویراستاران فقط از طریق isAdmin یا session.uid === threadUid
-    // (یعنی وقتی خودشان صاحب آن ترد به‌عنوان کاربر عادی هستند) دسترسی خواهند داشت.
+    // 'editors/{editorId}/threads' (docId = uid کاربر عادی): خودِ همون کاربر، خودِ ویراستار مربوطه، یا ادمین
+    // 'editors/{editorId}/threads/{uid}/messages': همان‌طور
     if (parts[0] === 'editors' && parts.length > 1) {
         if (!session) return false;
         if (isAdmin) return true;
         if (session.editorId && session.editorId === parts[1]) return true;
         if (parts.length >= 4) {
-            const threadUid = parts[3];
+            const threadUid = parts[3]; // .../threads/{uid}/messages
             return session.uid === threadUid;
+        }
+        if (parts.length === 3 && parts[2] === 'threads') {
+            // ست/آپدیت روی سطح خودِ ترد: docId باید uid خودِ کاربر باشد
+            return !!(docId && session.uid === docId);
         }
         return false;
     }
@@ -269,11 +297,19 @@ async function checkFsPermission(env, session, op, collection) {
     }
 
     if (collection === 'users') {
-        return !!session; // هر کاربر واردشده‌ای می‌تونه نام خودش رو بخونه/بنویسه (کنترل دقیق‌تر در بدنه انجام می‌شه)
+        if (!session) return false;
+        // هر کاربر واردشده‌ای فقط می‌تونه سند خودش رو بخونه/بنویسه
+        if (op === 'get' || op === 'set' || op === 'update') return docId === session.uid;
+        return isAdmin;
     }
 
     if (collection === 'pendingRequests') {
         return isAdmin; // فقط ادمین برای تایید/رد
+    }
+
+    if (collection === 'settings') {
+        if (op === 'get' || op === 'list') return true; // خواندن (مثلاً آواتار انتخابی مدیر) برای همه آزاد
+        return isAdmin; // نوشتن فقط ادمین
     }
 
     // پیش‌فرض محتاطانه: نیاز به نشست معتبر
@@ -285,7 +321,7 @@ async function handleFsProxy(request, env) {
     const { op, collection, docId, data, orderByField, orderByDir } = await request.json();
     if (!collection) return jsonRes({ error: 'collection مشخص نشده' }, 400);
 
-    const allowed = await checkFsPermission(env, session, op, collection);
+    const allowed = await checkFsPermission(env, session, op, collection, docId);
     if (!allowed) return jsonRes({ error: 'دسترسی غیرمجاز' }, 403);
 
     try {

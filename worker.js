@@ -298,9 +298,10 @@ async function checkFsPermission(env, session, op, collection, docId) {
 
     if (collection === 'users') {
         if (!session) return false;
+        if (isAdmin) return true; // مدیر به همه‌ی کاربران دسترسی دارد (برای لیست کامل کاربران)
         // هر کاربر واردشده‌ای فقط می‌تونه سند خودش رو بخونه/بنویسه
         if (op === 'get' || op === 'set' || op === 'update') return docId === session.uid;
-        return isAdmin;
+        return false;
     }
 
     if (collection === 'pendingRequests') {

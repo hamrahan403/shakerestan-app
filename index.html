@@ -1520,15 +1520,25 @@
                         <button onclick="adminAddTaskAssignee()" style="background:var(--teal-light);border:1px solid var(--teal-dark);border-radius:40px;padding:6px 14px;font-family:var(--font);font-size:0.75rem;cursor:pointer;color:var(--teal-dark);margin-left:8px;">➕ افزودن کاربر</button>
                         <button onclick="adminCreateTask()" style="background:var(--gold);border:none;border-radius:40px;padding:6px 14px;font-family:var(--font);font-size:0.75rem;cursor:pointer;">➕ کار جدید</button>
                     </div>
-                    <div style="margin-bottom:14px;">
-                        <button onclick="openClaimPool()" style="background:var(--beige-dark);border:none;border-radius:40px;padding:8px 16px;font-family:var(--font);font-size:0.8rem;cursor:pointer;width:100%;">🙋 گردن گرفتن کار جدید</button>
+
+                    <!-- بخش مخصوص ویراستاران: کارهای تحویل‌داده‌شده به آن‌ها -->
+                    <div id="editor-deliveries-section" style="display:none;">
+                        <h3 style="font-size:0.95rem;margin:0 0 8px;">📥 تحویل کار</h3>
+                        <div id="editor-deliveries-list"></div>
+                        <div class="pattern-divider">✦ ✦ ✦</div>
                     </div>
-                    <h3 style="font-size:0.95rem;margin:14px 0 8px;">📌 کارهای محول‌شده</h3>
-                    <div id="tasks-assigned"></div>
-                    <h3 style="font-size:0.95rem;margin:14px 0 8px;color:var(--terracotta);">⏰ دیگه کم‌کم داره دیر میشه تحویل بده</h3>
-                    <div id="tasks-overdue"></div>
-                    <h3 style="font-size:0.95rem;margin:14px 0 8px;">✅ کار رو داشته باش...</h3>
-                    <div id="tasks-delivered"></div>
+
+                    <div id="task-assignee-sections">
+                        <div style="margin-bottom:14px;">
+                            <button onclick="openClaimPool()" style="background:var(--beige-dark);border:none;border-radius:40px;padding:8px 16px;font-family:var(--font);font-size:0.8rem;cursor:pointer;width:100%;">🙋 گردن گرفتن کار جدید</button>
+                        </div>
+                        <h3 style="font-size:0.95rem;margin:14px 0 8px;">📌 کارهای محول‌شده</h3>
+                        <div id="tasks-assigned"></div>
+                        <h3 style="font-size:0.95rem;margin:14px 0 8px;color:var(--terracotta);">⏰ دیگه کم‌کم داره دیر میشه تحویل بده</h3>
+                        <div id="tasks-overdue"></div>
+                        <h3 style="font-size:0.95rem;margin:14px 0 8px;">✅ کار رو داشته باش...</h3>
+                        <div id="tasks-delivered"></div>
+                    </div>
                 </div>
 
                 <div id="claim-pool-view" style="display:none;">
@@ -1605,6 +1615,8 @@
                         <h3 id="editor-chat-title" style="color:var(--terracotta);margin-bottom:10px;"></h3>
                         <div class="chat-messages" id="editor-chat"></div>
                         <div class="chat-input-row">
+                            <button id="editor-attach-btn" title="پیوست عکس/فیلم/صدا" style="background:var(--beige-dark);border:none;border-radius:50%;width:38px;height:38px;flex-shrink:0;cursor:pointer;font-size:1rem;">📎</button>
+                            <input type="file" id="editor-attach-input" accept="image/*,video/*,audio/*" style="display:none;">
                             <input type="text" placeholder="پیام خود را بنویسید..." id="editor-msg-input">
                             <button id="editor-send-btn">ارسال</button>
                         </div>
@@ -1633,8 +1645,10 @@
                 </div>
                 <!-- Admin-only: همه‌ی کاربران (ایمیلی و تلفنی) -->
                 <div class="card admin-only" style="display:none;">
-                    <div class="card-title">👥 تمام کاربران</div>
-                    <div id="all-users-list"></div>
+                    <div class="card-title" id="toggle-all-users-btn" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+                        <span>👥 تمام کاربران</span><span id="all-users-toggle-icon">▾</span>
+                    </div>
+                    <div id="all-users-list" style="display:none;margin-top:8px;"></div>
                 </div>
                 <div style="text-align:center;font-size:0.6rem;color:var(--brown-light);margin-top:8px;">
                     ساخته شده با ❤️ در شکرستان
@@ -3563,7 +3577,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             const chatNav = $('.bottom-nav .nav-item[data-page="chat"]');
             chatNav.classList.toggle('disabled', currentUser.isGuest);
             $$('.admin-only').forEach(el => el.style.display = currentUser.isAdmin ? '' : 'none');
-            const canSeeGroups = currentUser.isAdmin || currentUser.isTaskAssignee;
+            const canSeeGroups = currentUser.isAdmin || currentUser.isTaskAssignee || currentUser.isEditor;
             const groupsNav = $('#groups-nav-item');
             if (groupsNav) groupsNav.style.display = canSeeGroups ? '' : 'none';
             const toolsEl = $('#tasks-admin-tools');
@@ -3839,7 +3853,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 emailRow.style.display = 'none';
             }
 
-            if (currentUser.isAdmin) renderAllUsersList();
+            // لیست تمام کاربران دیگر خودکار لود نمی‌شود؛ فقط با کلیک ادمین باز می‌شود (پایین‌تر wiring شده)
         }
 
         // Admin: نمایش تمام کاربران (ایمیلی + تلفنی)
@@ -4872,18 +4886,34 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         }
 
         function renderTaskBoard() {
-            const hasAccess = currentUser.isAdmin || currentUser.isTaskAssignee;
+            const hasAccess = currentUser.isAdmin || currentUser.isTaskAssignee || currentUser.isEditor;
             $('#tasks-no-access').style.display = hasAccess ? 'none' : 'block';
             $('#tasks-main-view').style.display = hasAccess ? 'block' : 'none';
             if (!hasAccess) return;
+
+            const isEditorOnly = currentUser.isEditor && !currentUser.isAdmin && !currentUser.isTaskAssignee;
+            $('#editor-deliveries-section').style.display = currentUser.isEditor ? 'block' : 'none';
+            $('#task-assignee-sections').style.display = isEditorOnly ? 'none' : 'block';
+
+            const emptyMsg = '<div style="font-size:0.75rem;color:var(--brown-light);text-align:center;padding:8px 0;">خالی</div>';
+
+            if (currentUser.isEditor) {
+                const deliveries = DATA.tasks.filter(t => t.status === 'done' && t.deliveredToEditorId === currentUser.editorId);
+                $('#editor-deliveries-list').innerHTML = deliveries.map(t => `
+                    <div class="group-card" onclick="openDeliveredTaskThread('${t.id}')" style="cursor:pointer;">
+                        <div class="g-name">${t.title}</div>
+                        <div class="g-meta">👤 ${t.assignedName || 'کاربر'} • تحویل: ${t.deliveredAtMs ? new Date(t.deliveredAtMs).toLocaleString('fa-IR') : '—'}</div>
+                    </div>
+                `).join('') || emptyMsg;
+            }
+
+            if (isEditorOnly) return;
 
             const now = Date.now();
             const mine = DATA.tasks.filter(t => t.assignedTo === currentUser.uid);
             const assigned = mine.filter(t => t.status === 'claimed' && t.deadlineMs > now);
             const overdue  = mine.filter(t => t.status === 'claimed' && t.deadlineMs <= now);
             const done     = mine.filter(t => t.status === 'done');
-
-            const emptyMsg = '<div style="font-size:0.75rem;color:var(--brown-light);text-align:center;padding:8px 0;">خالی</div>';
 
             $('#tasks-assigned').innerHTML = assigned.map(t => `
                 <div class="group-card">
@@ -5356,16 +5386,35 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             `).join('');
         }
 
+        // ویراستار از بخش «تحویل کار» روی یک کار تحویل‌داده‌شده کلیک می‌کند
+        window.openDeliveredTaskThread = function(taskId) {
+            const t = DATA.tasks.find(x => x.id === taskId);
+            if (!t || !t.assignedTo) return;
+            navigateTo('chat');
+            switchChatTab('editors');
+            openEditorThreadAsEditor(t.assignedTo);
+        };
+
         function renderEditorChatMessages(messages, editorLabel) {
             const el = $('#editor-chat');
             el.innerHTML = messages.map(m => `
                 <div class="chat-msg ${m.fromEditor ? 'own' : ''}">
                     <div class="msg-user">${m.fromEditor ? `✏️ ${editorLabel}` : '🕵️ کاربر'}</div>
-                    ${m.msg}
+                    ${m.msg ? m.msg : ''}
+                    ${renderChatMediaHtml(m)}
                     <div class="msg-time">${m.time}</div>
                 </div>
             `).join('') || `<div style="text-align:center;color:var(--brown-light);font-size:0.8rem;padding:16px 0;">هنوز پیامی نیست، اولین پیام رو بفرست</div>`;
             el.scrollTop = el.scrollHeight;
+        }
+
+        // نمایش فایل پیوست‌شده (عکس/فیلم/صدا) داخل حباب پیام
+        function renderChatMediaHtml(m) {
+            if (!m.mediaUrl) return '';
+            if (m.mediaType === 'image') return `<img src="${m.mediaUrl}" style="max-width:100%;border-radius:10px;margin-top:6px;display:block;">`;
+            if (m.mediaType === 'video') return `<video src="${m.mediaUrl}" controls style="max-width:100%;border-radius:10px;margin-top:6px;display:block;"></video>`;
+            if (m.mediaType === 'audio') return `<audio src="${m.mediaUrl}" controls style="width:100%;margin-top:6px;display:block;"></audio>`;
+            return `<a href="${m.mediaUrl}" target="_blank" style="display:block;margin-top:6px;">📎 فایل پیوست</a>`;
         }
 
         async function pollEditorChat(editorId, threadUid, editorLabel) {
@@ -5451,10 +5500,11 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             initEditorsTab();
         }
 
-        async function sendEditorMsg() {
+        async function sendEditorMsg(mediaInfo) {
             const input = $('#editor-msg-input');
             const text = input.value.trim();
-            if (!text || !currentEditorId || !currentEditorThreadUid) return;
+            if (!text && !mediaInfo) return;
+            if (!currentEditorId || !currentEditorThreadUid) return;
             input.value = '';
             const fromEditor = !!currentUser.isEditor;
             try {
@@ -5462,16 +5512,19 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 if (!fromEditor) {
                     threadMeta.name = ((currentUser.firstName && currentUser.lastName) ? `${currentUser.firstName} ${currentUser.lastName}` : currentUser.name) || 'کاربر';
                 }
+                const msgData = {
+                    fromEditor,
+                    msg: text,
+                    time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+                    createdAtMs: Date.now()
+                };
+                if (mediaInfo) {
+                    msgData.mediaUrl = mediaInfo.url;
+                    msgData.mediaType = mediaInfo.type;
+                }
                 await Promise.all([
                     apiFs('update', 'editors/' + currentEditorId + '/threads', { docId: currentEditorThreadUid, data: threadMeta }),
-                    apiFs('add', 'editors/' + currentEditorId + '/threads/' + currentEditorThreadUid + '/messages', {
-                        data: {
-                            fromEditor,
-                            msg: text,
-                            time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
-                            createdAtMs: Date.now()
-                        }
-                    })
+                    apiFs('add', 'editors/' + currentEditorId + '/threads/' + currentEditorThreadUid + '/messages', { data: msgData })
                 ]);
                 pollEditorChat(currentEditorId, currentEditorThreadUid, currentUser.isEditor ? '' : 'ویراستار');
                 // اگر کاربر از مسیر «تحویل کار» به این چت آمده، اولین پیامش کار را تحویل‌شده ثبت می‌کند
@@ -5491,6 +5544,21 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             } catch (e) {
                 console.error(e);
                 showToast('⚠️ ارسال پیام ناموفق بود: ' + (e.message || ''));
+            }
+        }
+
+        // انتخاب و آپلود فایل پیوست (عکس/فیلم/صدا) در چت ویراستاران
+        async function handleEditorAttachFile(file) {
+            if (!file) return;
+            const mimeType = file.type || '';
+            const type = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : 'file';
+            showToast('⏳ در حال آپلود فایل...');
+            try {
+                const uploadResult = await uploadToCloudinary(file, type);
+                await sendEditorMsg({ url: uploadResult.secure_url, type });
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ آپلود ناموفق بود: ' + (e.message || ''));
             }
         }
 
@@ -5995,6 +6063,9 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 if (e.target === adminModal) closeAdminModal();
             });
 
+            // Group back button
+            $('#back-to-groups').addEventListener('click', backToGroups);
+
             // Chat send
             $('#public-send-btn').addEventListener('click', sendPublicMsg);
             $('#clear-public-chat-btn').addEventListener('click', clearAllPublicChat);
@@ -6031,6 +6102,14 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
 
             // Logout
             $('#edit-profile-btn').addEventListener('click', openProfileEditModal);
+            $('#toggle-all-users-btn').addEventListener('click', async () => {
+                const listEl = $('#all-users-list');
+                const iconEl = $('#all-users-toggle-icon');
+                const opening = listEl.style.display === 'none';
+                listEl.style.display = opening ? 'block' : 'none';
+                iconEl.textContent = opening ? '▴' : '▾';
+                if (opening) await renderAllUsersList();
+            });
             $('#logout-btn').addEventListener('click', () => {
                 if (confirm('آیا از خروج از حساب خود مطمئن هستید؟')) {
                     isLoggedIn = false;
@@ -6068,9 +6147,15 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             // Editors chat: admin add editor, navigation, send
             $('#add-editor-btn').addEventListener('click', addEditorAdmin);
             $('#back-to-editors').addEventListener('click', backToEditorsList);
-            $('#editor-send-btn').addEventListener('click', sendEditorMsg);
+            $('#editor-send-btn').addEventListener('click', () => sendEditorMsg());
             $('#editor-msg-input').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') sendEditorMsg();
+            });
+            $('#editor-attach-btn').addEventListener('click', () => $('#editor-attach-input').click());
+            $('#editor-attach-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                e.target.value = '';
+                if (file) handleEditorAttachFile(file);
             });
 
             // Initial render

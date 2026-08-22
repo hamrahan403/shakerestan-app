@@ -20,6 +20,7 @@ export default {
 
         try {
             if (p === '/telegram-upload' && request.method === 'POST') return await handleTelegramUpload(request, env);
+            if (p === '/telegram-file' && request.method === 'GET') return await handleTelegramFileProxy(request, env);
             if (p === '/api/auth/request-code' && request.method === 'POST') return await handleRequestCode(request, env);
             if (p === '/api/auth/verify-code' && request.method === 'POST') return await handleVerifyCode(request, env);
             if (p === '/api/auth/complete-login' && request.method === 'POST') return await handleCompleteLogin(request, env);
@@ -408,6 +409,26 @@ async function handleTelegramUpload(request, env) {
     const fileInfoJson = await fileInfoRes.json();
     if (!fileInfoJson.ok) return jsonRes({ error: 'دریافت مسیر فایل ناموفق بود' }, 502);
 
-    const secure_url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfoJson.result.file_path}`;
+    // به‌جای لینک مستقیم تلگرام (که مرورگر کاربر مستقیم بهش وصل می‌شد)، از پروکسی خودِ Worker استفاده می‌کنیم
+    const secure_url = `/telegram-file?path=${encodeURIComponent(fileInfoJson.result.file_path)}`;
     return jsonRes({ secure_url, bytes: bytes.length, duration: result.video ? result.video.duration : undefined });
+}
+
+// نمایش فایل‌های آپلودشده از طریق خودِ Worker (نه لینک مستقیم api.telegram.org) —
+// این‌طوری حتی اگر دامنه‌ی تلگرام برای کاربر فیلتر باشد، نمایش عکس/فیلم/صدا مشکلی پیدا نمی‌کند.
+async function handleTelegramFileProxy(request, env) {
+    const BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
+    if (!BOT_TOKEN) return new Response('توکن بات تنظیم نشده', { status: 500 });
+
+    const url = new URL(request.url);
+    const path = url.searchParams.get('path');
+    if (!path) return new Response('مسیر فایل مشخص نشده', { status: 400 });
+
+    const tgRes = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${path}`);
+    if (!tgRes.ok) return new Response('دریافت فایل از تلگرام ناموفق بود', { status: 502 });
+
+    const headers = new Headers();
+    headers.set('Content-Type', tgRes.headers.get('Content-Type') || 'application/octet-stream');
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    return new Response(tgRes.body, { status: 200, headers });
 }

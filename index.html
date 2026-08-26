@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-    <link rel="manifest" href="/manifest.json">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#e23b2e">
@@ -1547,6 +1546,19 @@
                 </div>
             </div>
 
+            <!-- ========== صفحه‌ی جدا و مستقل «تحویل کار» (کاملاً جدا از چت ناشناسِ ویراستاران) ========== -->
+            <div class="page" id="page-task-delivery">
+                <button onclick="closeTaskDeliveryPage()" style="background:none;border:none;font-family:var(--font);font-size:0.9rem;color:var(--terracotta);cursor:pointer;margin-bottom:12px;">← بازگشت به گروه‌ها</button>
+                <h3 id="task-delivery-title" style="color:var(--terracotta);margin-bottom:10px;"></h3>
+                <div class="chat-messages" id="task-delivery-messages"></div>
+                <div class="chat-input-row">
+                    <button id="delivery-attach-btn" title="پیوست عکس/فیلم/صدا" style="background:var(--beige-dark);border:none;border-radius:50%;width:38px;height:38px;flex-shrink:0;cursor:pointer;font-size:1rem;">📎</button>
+                    <input type="file" id="delivery-attach-input" accept="image/*,video/*,audio/*" style="display:none;">
+                    <input type="text" placeholder="توضیحات کار رو بنویس..." id="delivery-msg-input">
+                    <button id="delivery-send-btn">ارسال</button>
+                </div>
+            </div>
+
             <!-- ========== CHAT ========== -->
             <div class="page" id="page-chat">
                 <div class="sub-tabs">
@@ -1740,6 +1752,7 @@
             const fileBase64 = await fileToBase64(file);
             const res = await fetch('/telegram-upload', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fileBase64, fileName: file.name, mimeType: file.type || 'application/octet-stream' })
             });
             const json = await res.json().catch(() => ({}));
@@ -3434,6 +3447,17 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
     // throughout this document need these functions to exist on the global scope.
         // ---------- DOM references ----------
         const $ = (sel) => document.querySelector(sel);
+
+        // جلوگیری از حمله‌ی XSS: هر متنی که کاربر (نه ادمین) وارد کرده، قبل از نمایش باید از این تابع رد بشه
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
         const $$ = (sel) => document.querySelectorAll(sel);
 
         const splash = $('#splash');
@@ -3883,8 +3907,8 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 el.innerHTML = all.map(u => `
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dashed var(--beige-dark);">
                         <div>
-                            <div style="font-weight:600;font-size:0.82rem;">${u.label}</div>
-                            <div style="font-size:0.68rem;color:var(--brown-light);">${u.sub} • ${u.kind}</div>
+                            <div style="font-weight:600;font-size:0.82rem;">${escapeHtml(u.label)}</div>
+                            <div style="font-size:0.68rem;color:var(--brown-light);">${escapeHtml(u.sub)} • ${u.kind}</div>
                         </div>
                         <span style="font-size:0.68rem;">${u.status}</span>
                     </div>
@@ -4235,20 +4259,22 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         // ---------- Rendering: Notes (subjects -> sessions) ----------
         let currentNotesSubject = null;
 
-        function getSubjects() {
-            const fromNotes = DATA.notes.map(n => n.subject);
-            const extra = (DATA.extraSubjects || []).map(s => s.name);
-            const subjects = [...new Set([...fromNotes, ...extra])];
+        function getSubjects(scope) {
+            const sourceArr = scope === 'videos' ? DATA.videos : DATA.notes;
+            const fromSource = sourceArr.map(n => n.subject);
+            const extra = (DATA.extraSubjects || []).filter(s => (s.scope || 'notes') === scope).map(s => s.name);
+            const subjects = [...new Set([...fromSource, ...extra])];
             return subjects.map(s => ({
                 name: s,
                 icon: DATA.subjectIcons[s] || '📘',
-                count: DATA.notes.filter(n => n.subject === s).length
+                count: sourceArr.filter(n => n.subject === s).length
             }));
         }
 
-        // Admin: افزودن درس جدید (حتی بدون جزوه) — در Firestore collection "subjects"
-        function addSubjectAdmin() {
-            openAdminModal('➕ ثبت درس جدید', `
+        // Admin: افزودن درس جدید (حتی بدون جزوه/ویدیو) — مستقل برای «notes» یا «videos»
+        function addSubjectAdmin(scope) {
+            scope = scope || 'notes';
+            openAdminModal(`➕ ثبت درس جدید (${scope === 'videos' ? 'ویدیوها' : 'جزوه‌ها'})`, `
                 <div class="admin-field">
                     <label>نام درس *</label>
                     <input type="text" name="name" required placeholder="مثلاً فیزیولوژی">
@@ -4261,33 +4287,33 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 const name = form.name.value.trim();
                 const icon = form.icon.value.trim() || '📘';
                 if (!name) throw new Error('نام درس را وارد کنید');
-                await apiFs('set', 'subjects', { docId: name, data: { name, icon, createdAtMs: Date.now() } });
+                await apiFs('set', 'subjects', { docId: `${scope}:${name}`, data: { name, icon, scope, createdAtMs: Date.now() } });
                 DATA.subjectIcons[name] = icon;
                 if (!DATA.extraSubjects) DATA.extraSubjects = [];
-                if (!DATA.extraSubjects.find(s => s.name === name)) DATA.extraSubjects.push({ name, icon });
+                if (!DATA.extraSubjects.find(s => s.name === name && (s.scope || 'notes') === scope)) {
+                    DATA.extraSubjects.push({ name, icon, scope });
+                }
                 showToast('✅ درس با موفقیت ذخیره شد');
-                renderNotesSubjects();
-                renderVideoSubjectScroller();
+                if (scope === 'videos') renderVideoSubjectScroller(); else renderNotesSubjects();
                 closeAdminModal();
             });
         }
 
-        // Admin: حذف درس (فقط اگر جزوه/ویدیویی به آن وابسته نباشد)
-        window.deleteSubjectAdmin = async function(name) {
-            const notesCount = DATA.notes.filter(n => n.subject === name).length;
-            const videosCount = DATA.videos.filter(v => v.subject === name).length;
-            if (notesCount > 0 || videosCount > 0) {
-                showToast(`⚠️ این درس ${notesCount} جزوه و ${videosCount} ویدیو دارد؛ اول آن‌ها را حذف کنید`);
+        // Admin: حذف درس (فقط اگر جزوه/ویدیویی به آن وابسته نباشد) — مستقل برای هر scope
+        window.deleteSubjectAdmin = async function(name, scope) {
+            scope = scope || 'notes';
+            const sourceArr = scope === 'videos' ? DATA.videos : DATA.notes;
+            const count = sourceArr.filter(n => n.subject === name).length;
+            if (count > 0) {
+                showToast(`⚠️ این درس ${count} ${scope === 'videos' ? 'ویدیو' : 'جزوه'} دارد؛ اول آن‌ها را حذف کنید`);
                 return;
             }
             if (!confirm(`درس «${name}» حذف شود؟`)) return;
             try {
-                await apiFs('delete', 'subjects', { docId: name });
-                delete DATA.subjectIcons[name];
-                DATA.extraSubjects = (DATA.extraSubjects || []).filter(s => s.name !== name);
+                await apiFs('delete', 'subjects', { docId: `${scope}:${name}` });
+                DATA.extraSubjects = (DATA.extraSubjects || []).filter(s => !(s.name === name && (s.scope || 'notes') === scope));
                 showToast('✅ درس حذف شد');
-                renderNotesSubjects();
-                renderVideoSubjectScroller();
+                if (scope === 'videos') renderVideoSubjectScroller(); else renderNotesSubjects();
             } catch (e) {
                 console.error(e);
                 showToast('⚠️ حذف ناموفق بود: ' + (e.message || ''));
@@ -4296,11 +4322,11 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
 
         function renderNotesSubjects() {
             const el = $('#notes-subjects-grid');
-            const subjects = getSubjects();
+            const subjects = getSubjects('notes');
             el.innerHTML = subjects.map(s => {
-                const isExtra = (DATA.extraSubjects || []).find(x => x.name === s.name);
+                const isExtra = (DATA.extraSubjects || []).find(x => x.name === s.name && (x.scope || 'notes') === 'notes');
                 const delBtn = (currentUser.isAdmin && isExtra)
-                    ? `<button onclick="event.stopPropagation(); deleteSubjectAdmin('${s.name}')" style="position:absolute;top:4px;left:4px;background:none;border:none;font-size:0.9rem;cursor:pointer;color:var(--terracotta);">🗑️</button>`
+                    ? `<button onclick="event.stopPropagation(); deleteSubjectAdmin('${s.name}','notes')" style="position:absolute;top:4px;left:4px;background:none;border:none;font-size:0.9rem;cursor:pointer;color:var(--terracotta);">🗑️</button>`
                     : '';
                 return `
                 <div class="subject-card" style="position:relative;" onclick="openNotesSubject('${s.name}')">
@@ -4387,8 +4413,8 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         }
 
         // ---------- فرم واقعی ادمین برای جزوه (افزودن/ویرایش) ----------
-        function subjectOptionsHtml(selected) {
-            const subjects = getSubjects();
+        function subjectOptionsHtml(selected, scope) {
+            const subjects = getSubjects(scope || 'notes');
             return subjects.map(s => `<option value="${s.name}" ${s.name === selected ? 'selected' : ''}>${s.icon} ${s.name}</option>`).join('')
                 + `<option value="__new__">➕ درس جدید...</option>`;
         }
@@ -4401,7 +4427,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 </div>
                 <div class="admin-field">
                     <label>درس *</label>
-                    <select name="subject" id="note-subject-select">${subjectOptionsHtml(n ? n.subject : currentNotesSubject)}</select>
+                    <select name="subject" id="note-subject-select">${subjectOptionsHtml(n ? n.subject : currentNotesSubject, 'notes')}</select>
                 </div>
                 <div class="admin-field" id="note-new-subject-field" style="display:none;">
                     <label>نام درس جدید</label>
@@ -4476,8 +4502,10 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 if (!subject) throw new Error('نام درس جدید را وارد کنید');
                 if (!DATA.subjectIcons[subject]) {
                     DATA.subjectIcons[subject] = '📘';
-                    await apiFs('set', 'subjects', { docId: subject, data: { name: subject, icon: '📘', createdAtMs: Date.now() } });
-                    if (!DATA.extraSubjects.find(s => s.name === subject)) DATA.extraSubjects.push({ name: subject, icon: '📘' });
+                    await apiFs('set', 'subjects', { docId: `notes:${subject}`, data: { name: subject, icon: '📘', scope: 'notes', createdAtMs: Date.now() } });
+                    if (!DATA.extraSubjects.find(s => s.name === subject && (s.scope || 'notes') === 'notes')) {
+                        DATA.extraSubjects.push({ name: subject, icon: '📘', scope: 'notes' });
+                    }
                 }
             }
             const title = form.title.value.trim();
@@ -4639,16 +4667,19 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             try {
                 const result = await apiFs('list', 'subjects', {});
                 const items = result.items || [];
+                const keyOf = (s) => `${s.scope || 'notes'}:${s.name}`;
+                const seenKeys = new Set(items.map(keyOf));
                 const seenNames = new Set(items.map(s => s.name));
                 // حذف درس‌هایی که دیگر روی سرور نیستند
                 Object.keys(DATA.subjectIcons).forEach(name => {
                     if (!seenNames.has(name) && !BASE_SUBJECT_NAMES.has(name)) delete DATA.subjectIcons[name];
                 });
-                DATA.extraSubjects = DATA.extraSubjects.filter(x => seenNames.has(x.name));
+                DATA.extraSubjects = DATA.extraSubjects.filter(x => seenKeys.has(keyOf(x)));
                 items.forEach(s => {
                     DATA.subjectIcons[s.name] = s.icon;
-                    if (!DATA.extraSubjects.find(x => x.name === s.name)) DATA.extraSubjects.push(s);
-                    else DATA.extraSubjects = DATA.extraSubjects.map(x => x.name === s.name ? s : x);
+                    const existingIdx = DATA.extraSubjects.findIndex(x => keyOf(x) === keyOf(s));
+                    if (existingIdx === -1) DATA.extraSubjects.push(s);
+                    else DATA.extraSubjects[existingIdx] = s;
                 });
                 renderNotesPage();
                 renderVideoSubjectScroller();
@@ -4661,8 +4692,9 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             // بار اول فوری بخوان، بعد هر ۱۰ ثانیه دوباره
             pollNotes(); pollVideos(); pollCollabCalls(); pollAnnouncements(); pollSubjects();
             contentPollInterval = setInterval(() => {
+                if (document.hidden) return; // وقتی تب پس‌زمینه است، درخواست اضافی نفرست
                 pollNotes(); pollVideos(); pollCollabCalls(); pollAnnouncements(); pollSubjects();
-            }, 10000);
+            }, 30000);
         }
         function stopContentListeners() {
             if (contentPollInterval) { clearInterval(contentPollInterval); contentPollInterval = null; }
@@ -4681,18 +4713,18 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
 
         function renderVideoSubjectScroller() {
             const el = $('#video-subject-scroller');
-            const subjects = getSubjects();
+            const subjects = getSubjects('videos');
             const chips = [{ name: 'all', label: '🎬 همه' }, ...subjects.map(s => ({ name: s.name, label: `${s.icon} ${s.name}` }))];
             el.innerHTML = chips.map(c => {
-                const isExtra = c.name !== 'all' && (DATA.extraSubjects || []).find(x => x.name === c.name);
+                const isExtra = c.name !== 'all' && (DATA.extraSubjects || []).find(x => x.name === c.name && (x.scope || 'notes') === 'videos');
                 const delBtn = (currentUser.isAdmin && isExtra)
-                    ? `<button onclick="event.stopPropagation(); deleteSubjectAdmin('${c.name}')" style="background:none;border:none;font-size:0.7rem;cursor:pointer;color:var(--terracotta);margin-right:-6px;">🗑️</button>`
+                    ? `<button onclick="event.stopPropagation(); deleteSubjectAdmin('${c.name}','videos')" style="background:none;border:none;font-size:0.7rem;cursor:pointer;color:var(--terracotta);margin-right:-6px;">🗑️</button>`
                     : '';
                 return `<span style="display:inline-flex;align-items:center;">
                     <button class="video-subject-chip ${currentVideoSubject === c.name ? 'active' : ''}" onclick="selectVideoSubject('${c.name}')">${c.label}</button>
                     ${delBtn}
                 </span>`;
-            }).join('') + (currentUser.isAdmin ? `<button class="video-subject-chip" onclick="addSubjectAdmin()" style="border-style:dashed;">➕ درس جدید</button>` : '');
+            }).join('') + (currentUser.isAdmin ? `<button class="video-subject-chip" onclick="addSubjectAdmin('videos')" style="border-style:dashed;">➕ درس جدید</button>` : '');
         }
 
         function selectVideoSubject(name) {
@@ -4731,7 +4763,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 </div>
                 <div class="admin-field">
                     <label>درس *</label>
-                    <select name="subject" id="video-subject-select">${subjectOptionsHtml(v ? v.subject : preset)}</select>
+                    <select name="subject" id="video-subject-select">${subjectOptionsHtml(v ? v.subject : preset, 'videos')}</select>
                 </div>
                 <div class="admin-field" id="video-new-subject-field" style="display:none;">
                     <label>نام درس جدید</label>
@@ -4783,8 +4815,10 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 if (!subject) throw new Error('نام درس جدید را وارد کنید');
                 if (!DATA.subjectIcons[subject]) {
                     DATA.subjectIcons[subject] = '📘';
-                    await apiFs('set', 'subjects', { docId: subject, data: { name: subject, icon: '📘', createdAtMs: Date.now() } });
-                    if (!DATA.extraSubjects.find(s => s.name === subject)) DATA.extraSubjects.push({ name: subject, icon: '📘' });
+                    await apiFs('set', 'subjects', { docId: `videos:${subject}`, data: { name: subject, icon: '📘', scope: 'videos', createdAtMs: Date.now() } });
+                    if (!DATA.extraSubjects.find(s => s.name === subject && (s.scope || 'notes') === 'videos')) {
+                        DATA.extraSubjects.push({ name: subject, icon: '📘', scope: 'videos' });
+                    }
                 }
             }
             const title = form.title.value.trim();
@@ -4865,7 +4899,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
 
         // ---------- Rendering: Task board (گروه‌ها) ----------
         let tasksPollInterval = null;
-        let deliveringTaskId = null;
+        // (سیستم قدیمی deliveringTaskId حذف شد؛ الان تحویل کار صفحه‌ی مستقل taskDeliveries دارد)
 
         async function pollTasks() {
             try {
@@ -4879,7 +4913,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             if (tasksPollInterval) { clearInterval(tasksPollInterval); tasksPollInterval = null; }
             if (!currentUser.isAdmin && !currentUser.isTaskAssignee) return;
             pollTasks();
-            tasksPollInterval = setInterval(pollTasks, 10000);
+            tasksPollInterval = setInterval(() => { if (!document.hidden) pollTasks(); }, 20000);
         }
         function stopTasksListener() {
             if (tasksPollInterval) { clearInterval(tasksPollInterval); tasksPollInterval = null; }
@@ -4902,7 +4936,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 $('#editor-deliveries-list').innerHTML = deliveries.map(t => `
                     <div class="group-card" onclick="openDeliveredTaskThread('${t.id}')" style="cursor:pointer;">
                         <div class="g-name">${t.title}</div>
-                        <div class="g-meta">👤 ${t.assignedName || 'کاربر'} • تحویل: ${t.deliveredAtMs ? new Date(t.deliveredAtMs).toLocaleString('fa-IR') : '—'}</div>
+                        <div class="g-meta">👤 ${escapeHtml(t.assignedName || 'کاربر')} • تحویل: ${t.deliveredAtMs ? new Date(t.deliveredAtMs).toLocaleString('fa-IR') : '—'}</div>
                     </div>
                 `).join('') || emptyMsg;
             }
@@ -4981,14 +5015,135 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
 
         // «تحویل کار» → کاربر را به صفحه‌ی چت ویراستاران هدایت می‌کند؛
         // اولین پیامی که پس از انتخاب ویراستار بفرستد، کار را «تحویل‌شده» ثبت می‌کند.
-        window.deliverTask = function(id) {
-            deliveringTaskId = id;
-            navigateTo('chat');
-            switchChatTab('editors');
-            showToast('👤 یک ویراستار را برای ارسال کار انتخاب کنید');
+        window.deliverTask = async function(id) {
+            const t = DATA.tasks.find(x => x.id === id);
+            if (!t) return;
+            // اگه قبلاً برای این کار ویراستاری انتخاب شده، مستقیم برو توی صفحه‌ی گفتگو
+            if (t.deliveredToEditorId) {
+                openTaskDeliveryPage(id, t.deliveredToEditorId, 'assignee');
+                return;
+            }
+            // در غیر این صورت، اول از یه لیست ناشناس ویراستار بخواه انتخاب کنه
+            try {
+                const result = await apiFs('list', 'editors', { orderByField: 'createdAtMs', orderByDir: 'desc' });
+                const editors = result.items || [];
+                if (!editors.length) { showToast('⚠️ هنوز ویراستاری ثبت نشده'); return; }
+                const optionsHtml = editors.map(ed => `
+                    <div onclick="selectDeliveryEditor('${id}','${ed.id}')" class="group-card" style="cursor:pointer;">
+                        <div class="g-name">✏️ ویراستار #${getUserCode(ed.id)}</div>
+                    </div>
+                `).join('');
+                openAdminModal('یک ویراستار برای تحویل انتخاب کن', `<div>${optionsHtml}</div>`, async () => {});
+                const submitBtn = $('.admin-modal-submit');
+                if (submitBtn) submitBtn.style.display = 'none';
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ دریافت لیست ویراستاران ناموفق بود');
+            }
+        };
+        window.selectDeliveryEditor = function(taskId, editorId) {
+            closeAdminModal();
+            openTaskDeliveryPage(taskId, editorId, 'assignee');
         };
 
-        // Admin: افزودن کاربر به گروه‌ها (بر اساس ایمیل ثبت‌شده در users/{uid})
+        // ---------- صفحه‌ی مستقل «تحویل کار» ----------
+        let currentDeliveryTaskId = null;
+        let currentDeliveryEditorId = null;
+        let deliveryPollInterval = null;
+
+        async function openTaskDeliveryPage(taskId, editorId, role) {
+            currentDeliveryTaskId = taskId;
+            currentDeliveryEditorId = editorId;
+            $('#page-groups').classList.remove('active');
+            $('#page-task-delivery').style.display = 'block';
+            $('#task-delivery-title').textContent = role === 'editor'
+                ? '📥 دریافت کار'
+                : '📤 تحویل کار';
+            renderTaskDeliveryMessages([]);
+            await pollTaskDelivery();
+            if (deliveryPollInterval) clearInterval(deliveryPollInterval);
+            deliveryPollInterval = setInterval(() => { if (!document.hidden) pollTaskDelivery(); }, 8000);
+        }
+        window.closeTaskDeliveryPage = function() {
+            if (deliveryPollInterval) { clearInterval(deliveryPollInterval); deliveryPollInterval = null; }
+            currentDeliveryTaskId = null;
+            currentDeliveryEditorId = null;
+            $('#page-task-delivery').style.display = 'none';
+            navigateTo('groups');
+        };
+
+        async function pollTaskDelivery() {
+            if (!currentDeliveryTaskId) return;
+            try {
+                const result = await apiFs('list', `taskDeliveries/${currentDeliveryTaskId}/messages`, { orderByField: 'createdAtMs', orderByDir: 'asc' });
+                renderTaskDeliveryMessages(result.items || []);
+            } catch (e) {
+                console.error('taskDelivery poll error:', e);
+            }
+        }
+
+        function renderTaskDeliveryMessages(messages) {
+            const el = $('#task-delivery-messages');
+            el.innerHTML = messages.map(m => `
+                <div class="chat-msg ${m.fromEditor ? '' : 'own'}">
+                    <div class="msg-user">${m.fromEditor ? '✏️ ویراستار' : '👤 فرستنده‌ی کار'}</div>
+                    ${m.msg ? escapeHtml(m.msg) : ''}
+                    ${renderChatMediaHtml(m)}
+                    <div class="msg-time">${m.time}</div>
+                </div>
+            `).join('') || `<div style="text-align:center;color:var(--brown-light);font-size:0.8rem;padding:16px 0;">هنوز پیامی نیست</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function sendTaskDelivery(mediaInfo) {
+            const input = $('#delivery-msg-input');
+            const text = input.value.trim();
+            if (!text && !mediaInfo) return;
+            if (!currentDeliveryTaskId) return;
+            input.value = '';
+            const fromEditor = !!currentUser.isEditor;
+            const msgData = {
+                fromEditor,
+                msg: text,
+                time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+                createdAtMs: Date.now()
+            };
+            if (mediaInfo) { msgData.mediaUrl = mediaInfo.url; msgData.mediaType = mediaInfo.type; }
+            try {
+                await apiFs('add', `taskDeliveries/${currentDeliveryTaskId}/messages`, { data: msgData });
+                await pollTaskDelivery();
+                // اولین پیامِ فرستنده‌ی کار، کار رو به‌عنوان تحویل‌شده ثبت می‌کنه
+                if (!fromEditor) {
+                    const t = DATA.tasks.find(x => x.id === currentDeliveryTaskId);
+                    if (t && t.status !== 'done') {
+                        await apiFs('update', 'tasks', {
+                            docId: currentDeliveryTaskId,
+                            data: { status: 'done', deliveredAtMs: Date.now(), deliveredToEditorId: currentDeliveryEditorId }
+                        });
+                        showToast('✅ کار به عنوان تحویل‌شده ثبت شد');
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ ارسال ناموفق بود: ' + (e.message || ''));
+            }
+        }
+
+        async function handleDeliveryAttachFile(file) {
+            if (!file) return;
+            const mimeType = file.type || '';
+            const type = mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : 'file';
+            showToast('⏳ در حال آپلود فایل...');
+            try {
+                const uploadResult = await uploadToCloudinary(file, type);
+                await sendTaskDelivery({ url: uploadResult.secure_url, type });
+            } catch (e) {
+                console.error(e);
+                showToast('⚠️ آپلود ناموفق بود: ' + (e.message || ''));
+            }
+        }
+
+
         function adminAddTaskAssignee() {
             openAdminModal('➕ افزودن کاربر به گروه‌ها', `
                 <div class="admin-field">
@@ -5038,14 +5193,37 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         }
 
         // ---------- Rendering: Chat ----------
+        // ---------- مشاهده‌ی پروفایل یک کاربر با کلیک روی نامش در چت عمومی (شبیه تلگرام) ----------
+        // فقط نام انتخابی چت و عکس پروفایل نمایش داده می‌شود، نه نام واقعی/ایمیل
+        window.viewUserProfile = async function(uid, fallbackName) {
+            if (!uid) return;
+            try {
+                const result = await apiFs('get', 'users', { docId: uid });
+                const u = result.item;
+                const avatarHtml = u && u.avatarId ? getAvatarIcon(u.avatarId) : '🧔🏽';
+                const displayName = (u && u.chatName) || fallbackName || 'کاربر';
+                openAdminModal('پروفایل', `
+                    <div style="text-align:center;">
+                        <div style="width:90px;height:90px;border-radius:50%;overflow:hidden;background:var(--beige-dark);margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:2.5rem;">${avatarHtml}</div>
+                        <div style="font-size:1.1rem;font-weight:700;color:var(--terracotta);margin-bottom:6px;">${escapeHtml(displayName)}</div>
+                        ${u && u.bio ? `<div style="font-size:0.82rem;color:var(--brown-light);">${escapeHtml(u.bio)}</div>` : ''}
+                    </div>
+                `, async () => {});
+                const submitBtn = $('.admin-modal-submit');
+                if (submitBtn) submitBtn.style.display = 'none';
+            } catch (e) {
+                console.error(e);
+            }
+        };
+
         function renderPublicChat() {
             const el = $('#public-chat');
             const toolsEl = $('#public-chat-admin-tools');
             if (toolsEl) toolsEl.style.display = currentUser.isAdmin ? 'block' : 'none';
             el.innerHTML = DATA.publicChat.map(m => `
                 <div class="chat-msg ${m.isAdminMsg ? 'admin-msg' : ''}" style="position:relative;">
-                    <div class="msg-user">${m.isAdminMsg ? '🧔🏽 مدیریت' : (m.user + (m.isEditorMsg ? ' <span style="filter:grayscale(1) brightness(1.5);" title="ویراستار">👑</span>' : ''))}</div>
-                    ${m.msg}
+                    <div class="msg-user" ${(!m.isAdminMsg && m.uid) ? `onclick="viewUserProfile('${m.uid}', '${escapeHtml(m.user).replace(/'/g, "\\'")}')" style="cursor:pointer;"` : ''}>${m.isAdminMsg ? '🧔🏽 مدیریت' : (escapeHtml(m.user) + (m.isEditorMsg ? ' <span style="filter:grayscale(1) brightness(1.5);" title="ویراستار">👑</span>' : ''))}</div>
+                    ${escapeHtml(m.msg)}
                     <div class="msg-time">${m.time}</div>
                     ${currentUser.isAdmin && m.id ? `<span onclick="deleteOnePublicMsg('${m.id}')" style="position:absolute;top:2px;left:6px;color:var(--terracotta);font-size:0.7rem;cursor:pointer;">✕</span>` : ''}
                 </div>
@@ -5093,7 +5271,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         function startChatListeners() {
             if (publicChatPollInterval) { clearInterval(publicChatPollInterval); publicChatPollInterval = null; }
             pollPublicChat();
-            publicChatPollInterval = setInterval(pollPublicChat, 8000);
+            publicChatPollInterval = setInterval(() => { if (!document.hidden) pollPublicChat(); }, 10000);
         }
         function stopChatListeners() {
             if (publicChatPollInterval) { clearInterval(publicChatPollInterval); publicChatPollInterval = null; }
@@ -5106,6 +5284,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             input.value = '';
             const optimisticMsg = {
                 user: currentUser.isAdmin ? '🧔🏽 مدیریت' : (currentUser.name || 'کاربر'),
+                uid: currentUser.uid || '',
                 isAdminMsg: !!currentUser.isAdmin,
                 isEditorMsg: !!currentUser.isEditor,
                 msg: text,
@@ -5139,7 +5318,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             el.innerHTML = messages.map(m => `
                 <div class="chat-msg ${m.fromAdmin ? 'own admin-msg' : ''}">
                     <div class="msg-user">${m.fromAdmin ? '🧔🏽 مدیریت' : '🕵️ کاربر ناشناس'}</div>
-                    ${m.msg}
+                    ${escapeHtml(m.msg)}
                     <div class="msg-time">${m.time}</div>
                 </div>
             `).join('') || `<div style="text-align:center;color:var(--brown-light);font-size:0.8rem;padding:16px 0;">هنوز پیامی نیست</div>`;
@@ -5169,7 +5348,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 $('#anon-chat-title').textContent = '🕵️ هویت شما برای سازندگان ناشناس می‌ماند';
             }
             pollAnonThread(uid, isAdminViewing);
-            anonThreadPollInterval = setInterval(() => pollAnonThread(uid, isAdminViewing), 6000);
+            anonThreadPollInterval = setInterval(() => { if (!document.hidden) pollAnonThread(uid, isAdminViewing); }, 8000);
         }
 
         function backToAnonList() {
@@ -5200,7 +5379,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         function renderAnonThreadsList() {
             if (anonListPollInterval) { clearInterval(anonListPollInterval); anonListPollInterval = null; }
             pollAnonThreadsList();
-            anonListPollInterval = setInterval(pollAnonThreadsList, 8000);
+            anonListPollInterval = setInterval(() => { if (!document.hidden) pollAnonThreadsList(); }, 15000);
         }
         window.__openAnonThreadAdmin = function(uid) { openAnonThread(uid, true); };
 
@@ -5253,8 +5432,8 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             const el = $('#adminchat-chat');
             el.innerHTML = messages.map(m => `
                 <div class="chat-msg ${m.fromAdmin ? 'own admin-msg' : ''}">
-                    <div class="msg-user">${m.fromAdmin ? '🧔🏽 مدیریت' : m.userName}</div>
-                    ${m.msg}
+                    <div class="msg-user">${m.fromAdmin ? '🧔🏽 مدیریت' : escapeHtml(m.userName)}</div>
+                    ${escapeHtml(m.msg)}
                     <div class="msg-time">${m.time}</div>
                 </div>
             `).join('') || `<div style="text-align:center;color:var(--brown-light);font-size:0.8rem;padding:16px 0;">هنوز پیامی نیست</div>`;
@@ -5277,7 +5456,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             $('#back-to-adminchat-list').style.display = isAdminViewing ? 'inline-block' : 'none';
             $('#adminchat-title').textContent = isAdminViewing ? `🧑‍💼 گفتگو با ${label}` : '🧑‍💼 گفتگوی مستقیم و شناخته‌شده با مدیریت';
             pollAdminChatThread(uid);
-            adminChatThreadPollInterval = setInterval(() => pollAdminChatThread(uid), 6000);
+            adminChatThreadPollInterval = setInterval(() => { if (!document.hidden) pollAdminChatThread(uid); }, 8000);
         }
 
         function backToAdminChatList() {
@@ -5298,8 +5477,8 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                     return;
                 }
                 el.innerHTML = items.map(data => `
-                    <div class="subject-card" style="display:flex;align-items:center;justify-content:space-between;text-align:right;" onclick="window.__openAdminChatThreadAdmin('${data.id}', '${(data.name || 'کاربر').replace(/'/g, "\\'")}')">
-                        <div class="s-name">🧑‍💼 ${data.name || 'کاربر'}</div>
+                    <div class="subject-card" style="display:flex;align-items:center;justify-content:space-between;text-align:right;" onclick="window.__openAdminChatThreadAdmin('${data.id}', '${escapeHtml(data.name || 'کاربر').replace(/'/g, "\\'")}')">
+                        <div class="s-name">🧑‍💼 ${escapeHtml(data.name || 'کاربر')}</div>
                     </div>`
                 ).join('');
             } catch (e) { console.error('adminChat list poll error:', e); }
@@ -5308,7 +5487,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         function renderAdminChatThreadsList() {
             if (adminChatListPollInterval) { clearInterval(adminChatListPollInterval); adminChatListPollInterval = null; }
             pollAdminChatThreadsList();
-            adminChatListPollInterval = setInterval(pollAdminChatThreadsList, 8000);
+            adminChatListPollInterval = setInterval(() => { if (!document.hidden) pollAdminChatThreadsList(); }, 15000);
         }
         window.__openAdminChatThreadAdmin = function(uid, label) { openAdminChatThread(uid, true, label); };
 
@@ -5378,8 +5557,8 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             el.innerHTML = DATA.editors.map(ed => `
                 <div class="subject-card" style="display:flex;align-items:center;justify-content:space-between;text-align:right;" onclick="openEditorChat('${ed.id}')">
                     <div>
-                        <div class="s-name">✏️ ${ed.name}</div>
-                        ${currentUser.isAdmin ? `<div class="s-count">${ed.email}</div>` : ''}
+                        <div class="s-name">✏️ ${currentUser.isAdmin ? escapeHtml(ed.name) : 'ویراستار #' + getUserCode(ed.id)}</div>
+                        ${currentUser.isAdmin ? `<div class="s-count">${escapeHtml(ed.email)}</div>` : ''}
                     </div>
                     ${currentUser.isAdmin ? `<span onclick="event.stopPropagation();deleteEditorAdmin('${ed.id}')" style="color:var(--terracotta);font-size:0.75rem;">✕</span>` : ''}
                 </div>
@@ -5389,10 +5568,8 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         // ویراستار از بخش «تحویل کار» روی یک کار تحویل‌داده‌شده کلیک می‌کند
         window.openDeliveredTaskThread = function(taskId) {
             const t = DATA.tasks.find(x => x.id === taskId);
-            if (!t || !t.assignedTo) return;
-            navigateTo('chat');
-            switchChatTab('editors');
-            openEditorThreadAsEditor(t.assignedTo);
+            if (!t) return;
+            openTaskDeliveryPage(taskId, t.deliveredToEditorId, 'editor');
         };
 
         function renderEditorChatMessages(messages, editorLabel) {
@@ -5400,7 +5577,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             el.innerHTML = messages.map(m => `
                 <div class="chat-msg ${m.fromEditor ? 'own' : ''}">
                     <div class="msg-user">${m.fromEditor ? `✏️ ${editorLabel}` : '🕵️ کاربر'}</div>
-                    ${m.msg ? m.msg : ''}
+                    ${m.msg ? escapeHtml(m.msg) : ''}
                     ${renderChatMediaHtml(m)}
                     <div class="msg-time">${m.time}</div>
                 </div>
@@ -5429,15 +5606,16 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
         window.openEditorChat = function(id) {
             const editor = DATA.editors.find(e => e.id === id);
             if (!editor || !currentUser.uid) return;
+            const anonLabel = 'ویراستار #' + getUserCode(id);
             currentEditorId = id;
             currentEditorThreadUid = currentUser.uid;
             $('#editors-list-view').style.display = 'none';
             $('#editor-inbox-view').style.display = 'none';
             $('#editor-chat-view').style.display = 'block';
-            $('#editor-chat-title').textContent = `✏️ گفتگو با ${editor.name}`;
+            $('#editor-chat-title').textContent = `✏️ گفتگو با ${anonLabel}`;
             if (editorChatPollInterval) { clearInterval(editorChatPollInterval); editorChatPollInterval = null; }
-            pollEditorChat(id, currentUser.uid, editor.name);
-            editorChatPollInterval = setInterval(() => pollEditorChat(id, currentUser.uid, editor.name), 6000);
+            pollEditorChat(id, currentUser.uid, anonLabel);
+            editorChatPollInterval = setInterval(() => { if (!document.hidden) pollEditorChat(id, currentUser.uid, anonLabel); }, 8000);
         };
 
         // ویراستار از صندوق ورودی خودش روی یک کاربر کلیک می‌کند
@@ -5450,7 +5628,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             $('#editor-chat-title').textContent = `✏️ گفتگو با کاربر #${getUserCode(uid)}`;
             if (editorChatPollInterval) { clearInterval(editorChatPollInterval); editorChatPollInterval = null; }
             pollEditorChat(currentUser.editorId, uid, 'ویراستار');
-            editorChatPollInterval = setInterval(() => pollEditorChat(currentUser.editorId, uid, 'ویراستار'), 6000);
+            editorChatPollInterval = setInterval(() => { if (!document.hidden) pollEditorChat(currentUser.editorId, uid, 'ویراستار'); }, 8000);
         };
 
         async function pollEditorInbox() {
@@ -5474,7 +5652,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             if (editorInboxPollInterval) { clearInterval(editorInboxPollInterval); editorInboxPollInterval = null; }
             if (!currentUser.editorId) return;
             pollEditorInbox();
-            editorInboxPollInterval = setInterval(pollEditorInbox, 8000);
+            editorInboxPollInterval = setInterval(() => { if (!document.hidden) pollEditorInbox(); }, 15000);
         }
 
         // تب «ویراستاران» فعال شد
@@ -5508,10 +5686,6 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             input.value = '';
             const fromEditor = !!currentUser.isEditor;
             try {
-                const threadMeta = { lastMessageAtMs: Date.now() };
-                if (!fromEditor) {
-                    threadMeta.name = ((currentUser.firstName && currentUser.lastName) ? `${currentUser.firstName} ${currentUser.lastName}` : currentUser.name) || 'کاربر';
-                }
                 const msgData = {
                     fromEditor,
                     msg: text,
@@ -5523,24 +5697,10 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                     msgData.mediaType = mediaInfo.type;
                 }
                 await Promise.all([
-                    apiFs('update', 'editors/' + currentEditorId + '/threads', { docId: currentEditorThreadUid, data: threadMeta }),
+                    apiFs('update', 'editors/' + currentEditorId + '/threads', { docId: currentEditorThreadUid, data: { lastMessageAtMs: Date.now() } }),
                     apiFs('add', 'editors/' + currentEditorId + '/threads/' + currentEditorThreadUid + '/messages', { data: msgData })
                 ]);
-                pollEditorChat(currentEditorId, currentEditorThreadUid, currentUser.isEditor ? '' : 'ویراستار');
-                // اگر کاربر از مسیر «تحویل کار» به این چت آمده، اولین پیامش کار را تحویل‌شده ثبت می‌کند
-                if (deliveringTaskId && !fromEditor) {
-                    const taskId = deliveringTaskId;
-                    deliveringTaskId = null;
-                    await apiFs('update', 'tasks', {
-                        docId: taskId,
-                        data: {
-                            status: 'done',
-                            deliveredAtMs: Date.now(),
-                            deliveredToEditorId: currentEditorId
-                        }
-                    });
-                    showToast('✅ کار به عنوان تحویل‌شده ثبت شد');
-                }
+                pollEditorChat(currentEditorId, currentEditorThreadUid, currentUser.isEditor ? '' : 'ویراستار #' + getUserCode(currentEditorId));
             } catch (e) {
                 console.error(e);
                 showToast('⚠️ ارسال پیام ناموفق بود: ' + (e.message || ''));
@@ -5887,7 +6047,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             el.innerHTML = list.map(r => `
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--beige-dark);gap:8px;">
                     <div>
-                        <div style="font-weight:600;font-size:0.85rem;">${r.firstName} ${r.lastName}</div>
+                        <div style="font-weight:600;font-size:0.85rem;">${escapeHtml(r.firstName)} ${escapeHtml(r.lastName)}</div>
                         <div style="font-size:0.7rem;color:var(--brown-light);">${r.phone} • ${r.time}</div>
                     </div>
                     ${r.status === 'approved'
@@ -6063,6 +6223,9 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 if (e.target === adminModal) closeAdminModal();
             });
 
+            // Group back button
+            $('#back-to-groups').addEventListener('click', backToGroups);
+
             // Chat send
             $('#public-send-btn').addEventListener('click', sendPublicMsg);
             $('#clear-public-chat-btn').addEventListener('click', clearAllPublicChat);
@@ -6130,7 +6293,7 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             // Notes: back to subjects & admin add
             $('#notes-back-to-subjects').addEventListener('click', backToNotesSubjects);
             $('#add-note-subject-btn').addEventListener('click', addNoteAdmin);
-            $('#add-subject-btn').addEventListener('click', addSubjectAdmin);
+            $('#add-subject-btn').addEventListener('click', () => addSubjectAdmin('notes'));
 
             // Videos: admin add
             $('#add-video-btn').addEventListener('click', addVideoAdmin);
@@ -6155,6 +6318,18 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
                 if (file) handleEditorAttachFile(file);
             });
 
+            // صفحه‌ی مستقل تحویل کار
+            $('#delivery-send-btn').addEventListener('click', () => sendTaskDelivery());
+            $('#delivery-msg-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') sendTaskDelivery();
+            });
+            $('#delivery-attach-btn').addEventListener('click', () => $('#delivery-attach-input').click());
+            $('#delivery-attach-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                e.target.value = '';
+                if (file) handleDeliveryAttachFile(file);
+            });
+
             // Initial render
             renderAll();
             navigateTo('home');
@@ -6175,6 +6350,15 @@ PPV = ۹۰ ÷ (۹۰ + ۲۰) = ۹۰ ÷ ۱۱۰ ≈ ۰٫۸۲ 🎉 PPV ≈ ۰٫۸۲ 
             document.addEventListener('DOMContentLoaded', init);
         } else {
             init();
+        }
+
+        // ثبت Service Worker برای PWA (لازم برای PWABuilder و نصب اپ)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch((err) => {
+                    console.warn('Service worker registration failed:', err);
+                });
+            });
         }
 </script>
 </body>

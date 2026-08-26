@@ -17,24 +17,40 @@ export default {
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const p = url.pathname;
+        let response;
 
         try {
-            if (p === '/telegram-upload' && request.method === 'POST') return await handleTelegramUpload(request, env);
-            if (p === '/telegram-file' && request.method === 'GET') return await handleTelegramFileProxy(request, env);
-            if (p === '/api/auth/request-code' && request.method === 'POST') return await handleRequestCode(request, env);
-            if (p === '/api/auth/verify-code' && request.method === 'POST') return await handleVerifyCode(request, env);
-            if (p === '/api/auth/complete-login' && request.method === 'POST') return await handleCompleteLogin(request, env);
-            if (p === '/api/auth/phone-signup' && request.method === 'POST') return await handlePhoneSignup(request, env);
-            if (p === '/api/auth/session-status' && request.method === 'POST') return await handleSessionStatus(request, env);
-            if (p === '/api/fs' && request.method === 'POST') return await handleFsProxy(request, env);
+            if (p === '/telegram-upload' && request.method === 'POST') response = await handleTelegramUpload(request, env);
+            else if (p === '/telegram-file' && request.method === 'GET') response = await handleTelegramFileProxy(request, env);
+            else if (p === '/api/auth/request-code' && request.method === 'POST') response = await handleRequestCode(request, env);
+            else if (p === '/api/auth/verify-code' && request.method === 'POST') response = await handleVerifyCode(request, env);
+            else if (p === '/api/auth/complete-login' && request.method === 'POST') response = await handleCompleteLogin(request, env);
+            else if (p === '/api/auth/phone-signup' && request.method === 'POST') response = await handlePhoneSignup(request, env);
+            else if (p === '/api/auth/session-status' && request.method === 'POST') response = await handleSessionStatus(request, env);
+            else if (p === '/api/fs' && request.method === 'POST') response = await handleFsProxy(request, env);
+            else response = await env.ASSETS.fetch(request); // فایل‌های استاتیک (index.html و ...)
         } catch (e) {
-            return jsonRes({ error: e.message || 'خطای داخلی سرور' }, 500);
+            response = jsonRes({ error: e.message || 'خطای داخلی سرور' }, 500);
         }
 
-        // هر آدرس دیگری: فایل‌های استاتیک (index.html و ...) عادی سرو می‌شوند
-        return env.ASSETS.fetch(request);
+        return addSecurityHeaders(response);
     }
 };
+
+// هدرهای امنیتی استاندارد روی همه‌ی پاسخ‌ها (چه صفحه‌ی اصلی، چه API)
+function addSecurityHeaders(response) {
+    const newHeaders = new Headers(response.headers);
+    newHeaders.set('X-Frame-Options', 'DENY'); // جلوگیری از قرار گرفتن سایت داخل iframe سایت‌های دیگر (Clickjacking)
+    newHeaders.set('X-Content-Type-Options', 'nosniff'); // مرورگر نوع فایل رو حدس نزنه
+    newHeaders.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    newHeaders.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains'); // فقط HTTPS
+    newHeaders.set('Permissions-Policy', 'geolocation=(), camera=(), microphone=(self)');
+    return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders
+    });
+}
 
 function jsonRes(obj, status = 200) {
     return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -65,8 +81,15 @@ async function handleRequestCode(request, env) {
     const emailLower = (email || '').trim().toLowerCase();
     if (!emailLower || !emailLower.includes('@')) return jsonRes({ error: 'ایمیل نامعتبر است' }, 400);
 
+    const docId = safeId(emailLower);
+    const existing = await firestoreGet(env, `authCodes/${docId}`);
+    if (existing && existing.lockedUntilMs && Date.now() < existing.lockedUntilMs) {
+        const minutesLeft = Math.ceil((existing.lockedUntilMs - Date.now()) / 60000);
+        return jsonRes({ error: `تعداد تلاش‌های اشتباه زیاد بود؛ ${minutesLeft} دقیقه دیگر دوباره امتحان کنید` }, 429);
+    }
+
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    await firestoreSet(env, `authCodes/${safeId(emailLower)}`, {
+    await firestoreSet(env, `authCodes/${docId}`, {
         email: emailLower, code,
         createdAtMs: Date.now(),
         expiresAtMs: Date.now() + 10 * 60 * 1000
@@ -93,12 +116,29 @@ async function handleRequestCode(request, env) {
 async function handleVerifyCode(request, env) {
     const { email, code } = await request.json();
     const emailLower = (email || '').trim().toLowerCase();
-    const stored = await firestoreGet(env, `authCodes/${safeId(emailLower)}`);
+    const docId = safeId(emailLower);
+    const stored = await firestoreGet(env, `authCodes/${docId}`);
 
-    if (!stored || stored.code !== String(code) || Date.now() > stored.expiresAtMs) {
+    if (!stored) {
         return jsonRes({ error: 'کد اشتباه یا منقضی‌شده است' }, 400);
     }
-    await firestoreDelete(env, `authCodes/${safeId(emailLower)}`);
+
+    // قفل موقت بعد از تلاش‌های ناموفق زیاد (جلوگیری از حدس زدن خودکار کد)
+    if (stored.lockedUntilMs && Date.now() < stored.lockedUntilMs) {
+        const minutesLeft = Math.ceil((stored.lockedUntilMs - Date.now()) / 60000);
+        return jsonRes({ error: `تعداد تلاش‌های اشتباه زیاد بود؛ ${minutesLeft} دقیقه دیگر دوباره امتحان کنید` }, 429);
+    }
+
+    if (stored.code !== String(code) || Date.now() > stored.expiresAtMs) {
+        const attempts = (stored.attempts || 0) + 1;
+        const update = { attempts };
+        if (attempts >= 5) {
+            update.lockedUntilMs = Date.now() + 15 * 60 * 1000; // ۱۵ دقیقه قفل
+        }
+        await firestoreUpdate(env, `authCodes/${docId}`, update);
+        return jsonRes({ error: 'کد اشتباه یا منقضی‌شده است' }, 400);
+    }
+    await firestoreDelete(env, `authCodes/${docId}`);
 
     const ticket = await signTicket(env.WORKER_AUTH_SECRET, {
         email: emailLower,
@@ -297,11 +337,24 @@ async function checkFsPermission(env, session, op, collection, docId) {
         return isAdmin;
     }
 
+    // پیام‌های تحویل کار: 'taskDeliveries/{taskId}/messages' — فقط فرستنده‌ی همون کار،
+    // ویراستارِ گیرنده‌ی همون کار، یا ادمین اجازه‌ی خواندن/نوشتن دارند
+    if (parts[0] === 'taskDeliveries' && parts.length > 1) {
+        if (!session) return false;
+        if (isAdmin) return true;
+        const taskId = parts[1];
+        const task = await firestoreGet(env, `tasks/${taskId}`);
+        if (!task) return false;
+        return session.uid === task.assignedTo || (session.editorId && session.editorId === task.deliveredToEditorId);
+    }
+
     if (collection === 'users') {
         if (!session) return false;
         if (isAdmin) return true; // مدیر به همه‌ی کاربران دسترسی دارد (برای لیست کامل کاربران)
-        // هر کاربر واردشده‌ای فقط می‌تونه سند خودش رو بخونه/بنویسه
-        if (op === 'get' || op === 'set' || op === 'update') return docId === session.uid;
+        // خواندن پروفایل هر کاربر واردشده‌ای آزاد است (برای نمایش پروفایل با کلیک روی نام در چت)
+        if (op === 'get') return true;
+        // نوشتن فقط روی سند خودِ کاربر
+        if (op === 'set' || op === 'update') return docId === session.uid;
         return false;
     }
 

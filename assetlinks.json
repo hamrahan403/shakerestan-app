@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "dev.workers.hamrahanjozveh.shakerestan_app.twa",
+        "sha256_cert_fingerprints": ["2C:D4:84:F5:34:3F:77:72:CF:49:F2:78:42:45:DD:5B:59:B4:FE:C4:66:99:C9:20:97:30:FB:EB:71:EB:F3:DB"]
+      }
+    }]
